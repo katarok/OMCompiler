@@ -4,7 +4,11 @@
 #include <Core/Math/Functions.h>
 #include <Core/Math/ILapack.h>
 #include <Solver/Peer/Peer.h>
+#ifdef MPIPEER
 #include "/usr/include/mpich2/mpi.h"
+#else
+#include "omp.h"
+#endif
 
 Peer::Peer(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
@@ -67,15 +71,15 @@ Peer::~Peer()
 
 void Peer::initialize()
 {
-    std::cout<<&_size<<std::endl;
+#ifdef MPIPEER
     MPI_Comm_size(MPI_COMM_WORLD, &_size);
-    std::cout<<_size<<std::endl;
     if(_size>=5) {
         _size=5;
     } else {
         throw ModelicaSimulationError(SOLVER,"Peer::MPI initialization error");
     }
     MPI_Comm_rank(MPI_COMM_WORLD, &_rank);
+#endif
     _continuous_system = dynamic_cast<IContinuous*>(_system);
     _time_system =  dynamic_cast<ITime*>(_system);
     SolverDefaultImplementation::initialize();
@@ -150,6 +154,8 @@ void Peer::initialize()
     _c[3]=6.18033988749895e-01;
     _c[4]=1.;
 
+
+#ifdef MPIPEER
     _F=new double[_dimSys];
     _T=new double[_dimSys*_dimSys];
     _P=new long int[_dimSys];
@@ -162,6 +168,14 @@ void Peer::initialize()
         _Y2=new double[_dimSys];
         _Y3=new double[_dimSys];
     }
+#else
+    _F=new double[_dimSys*5];
+    _T=new double[_dimSys*_dimSys*5];
+    _P=new long int[_dimSys*5];
+    _Y1=new double[_dimSys*_rstages];
+    _Y2=new double[_dimSys*_rstages];
+    _Y3=new double[_dimSys*_rstages];
+#endif
     _h = std::max(std::min(_h, _peersettings->getUpperLimit()), _peersettings->getLowerLimit());
     _y = new double[_dimSys];
     _continuous_system->evaluateAll(IContinuous::ALL);
@@ -253,13 +267,11 @@ void Peer::solve(const SOLVERCALL action)
     if(_first) {
         initialize();
     }
-    if(_rank==0) {
-        std::cerr<<"Tstart: "<<_tCurrent<<" Tend: "<<_tEnd<<" h:"<<_h<<std::endl;
-    }
     double t=_tCurrent;
-  std::cerr << "using Peer on rank " << _rank<<std::endl;
   // Initialization phase
 
+
+#ifdef MPIPEER
     std::copy(_y,_y+_dimSys,_Y1);
     if (abs(_c[_rank]+1.)>1e-12)
     {
@@ -267,14 +279,26 @@ void Peer::solve(const SOLVERCALL action)
         ros2(_Y1,_tCurrent,_tCurrent+_h*(_c[_rank]+1.));
         t=_tCurrent;
     }
-
-    long int info;
     MPI_Barrier(MPI_COMM_WORLD);
     if(_rank==0) {
         MPI_Gather(MPI_IN_PLACE,_dimSys,MPI_DOUBLE,_Y1,_dimSys,MPI_DOUBLE,0,MPI_COMM_WORLD);
     } else {
         MPI_Gather(_Y1,_dimSys,MPI_DOUBLE,_Y1,_dimSys,MPI_DOUBLE,0,MPI_COMM_WORLD);
     }
+#else
+#pragma omp parallel for
+    for(int _rank=0; _rank<5; ++_rank) {
+        std::copy(_y,_y+_dimSys,&_Y1[_rank*_dimSys]);
+        if (abs(_c[_rank]+1.)>1e-12)
+        {
+            ros2(&_Y1[_rank*_dimSys],_tCurrent,_tCurrent+_h*(_c[_rank]+1.));
+            t=_tCurrent;
+        }
+    }
+#endif
+
+
+
 //    std::cerr << "Finished init at rank  " << _rank<<std::endl;
 // Solution phase
     t+=2.*_h;
@@ -282,14 +306,9 @@ void Peer::solve(const SOLVERCALL action)
     long int dim=1;
     while(std::abs(t-_tEnd)>1e-8)
     {
+#ifdef MPIPEER
         if(_rank==0)
         {
-            std::cout<<"_Y1 vals on rank "<<_rank<<": ";
-              for(int i=0; i<_rstages*_dimSys;++i) {
-                                    if(!(i%20)) std::cout<<std::endl;
-                std::cout<<_Y1[i]<<" ";
-            }
-            std::cout<<std::endl;
             for(int i=0; i<_rstages; ++i)
             {
                 for(int j=0; j<_dimSys; ++j) {
@@ -363,25 +382,76 @@ void Peer::solve(const SOLVERCALL action)
             MPI_Gather(_Y1,_dimSys,MPI_DOUBLE,_Y1,_dimSys,MPI_DOUBLE,0,MPI_COMM_WORLD);
         }
 
-            /*if(rank==0) {
-                for(int i=0; i<n; i++) y[i]=Y1.vector(rstages-1)[i];
-            }*/
+        if(t+_h>_tEnd) _h=_tEnd-t;
+        t+=_h;
+        if(_rank==0) {
+            SolverDefaultImplementation::writeToFile(0, t, _h);
+        }
+#else
+        for(int i=0; i<_rstages; ++i)
+        {
+            for(int j=0; j<_dimSys; ++j) {
+                _Y2[i*_dimSys+j]=0.;
+                    for(int k=0; k<_rstages;++k) {
+                        _Y2[i*_dimSys+j]+=_Y1[k*_dimSys+j]*_Theta[i*_rstages+k];
+                    }
+                }
+ //               Y2.vector(i)=Y1*mtl::vector::trans(Theta[i][iall]);
+            }
+            for(int i=0; i<_rstages; i++)
+            {
+                 for(int j=0; j<_dimSys; ++j) {
+                    _Y3[i*_dimSys+j]=0.;
+                    for(int k=0; k<_rstages;++k) {
+                        _Y3[i*_dimSys+j]+=_Y2[k*_dimSys+j]*_E[i*_rstages+k];
+                    }
+                }
+//                Y3.vector(i)=Y2*mtl::vector::trans(E[i][iall]);
+            }
+
+#pragma omp parallel for
+        for(int _rank=0; _rank<5; ++_rank) {
+            long int info;
+            evalF(t+_c[_rank]*_h,&_Y2[_rank*_dimSys],&_F[_rank*_dimSys]);
+            evalJ(t+_c[_rank]*_h,&_Y2[_rank*_dimSys],&_T[_rank*_dimSys*_dimSys]);
+            for(int i=0; i<_dimSys; ++i) {
+                for(int j=0; j<_dimSys; ++j) {
+                    _T[_rank*_dimSys*_dimSys+i*_dimSys+j]*=-_h*_G[_rank];
+                }
+                _T[_rank*_dimSys*_dimSys+i*_dimSys+i]+=1.;
+            }
+
+
+    //        std::cerr << "Finished iteration matrix calculation step at rank  " << _rank<<std::endl;
+            dgetrf_(&_dimSys, &_dimSys, &_T[_rank*_dimSys*_dimSys], &_dimSys, &_P[_rank*_dimSys], &info);
+            for(int i=0; i<_dimSys; ++i) {
+                _F[_rank*_dimSys+i]*=_h;
+                _F[_rank*_dimSys+i]-=_Y3[_rank*_dimSys+i];
+                _F[_rank*_dimSys+i]*=_G[_rank];
+            }
+            dgetrs_(&trans, &_dimSys, &dim, &_T[_rank*_dimSys*_dimSys], &_dimSys, &_P[_rank*_dimSys], &_F[_rank*_dimSys], &_dimSys, &info);
+            for(int i=0; i<_dimSys; ++i) {
+                _Y1[_rank*_dimSys+i]=_F[_rank*_dimSys+i]+_Y2[_rank*_dimSys+i];
+            }
+        }
+
 
         if(t+_h>_tEnd) _h=_tEnd-t;
-            t+=_h;
-//        std::cerr << "Finished time step at rank  " << _rank<<std::endl;
-    if(_rank==0) {
-        std::cout<<"T: "<<t<<std::endl;
+        t+=_h;
         SolverDefaultImplementation::writeToFile(0, t, _h);
-    }
+#endif
 
     }
+#ifdef MPIPEER
     MPI_Barrier(MPI_COMM_WORLD);
     if(_rank==0)
     {
         for(int i=0; i<_dimSys; i++) _y[i]=_Y1[(_rstages-1)*_dimSys+i];
     }
     MPI_Bcast(_y, _dimSys, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+#else
+    for(int i=0; i<_dimSys; i++) _y[i]=_Y1[(_rstages-1)*_dimSys+i];
+#endif
     _tCurrent=_tEnd;
     _solverStatus = ISolver::DONE;
 }
