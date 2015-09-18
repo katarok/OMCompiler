@@ -33,8 +33,7 @@ encapsulated package StateMachineFeatures
 " file:        StateMachineFeatures.mo
   package:     StateMachineFeatures
   description: Provides support for Modelica State Machines.
-
-  RCS: $Id$"
+"
 
 public import Absyn;
 public import BackendDAE;
@@ -171,6 +170,18 @@ constant String SMS_PRE = "smOf" "prefix for crefs of fresh State Machine Semant
 constant Boolean DEBUG_SMDUMP = false "enable verbose stdout debug information during elaboration";
 
 public function stateMachineElab
+  "Deactived old module, since now implemented in frontend. See function 'stateMachineElabDEACTIVATED' for old code.
+
+   Might want to reactivate (and adapt) the module at a later time, particularly when state machine support is to be
+   extended to support features that cannot be handled in a good way in the front-end.
+  "
+  input BackendDAE.BackendDAE inDAE;
+  output BackendDAE.BackendDAE outDAE;
+algorithm
+  outDAE := inDAE;
+end stateMachineElab;
+
+public function stateMachineElabDEACTIVATED
   "Elaborate state machines and transform them in data-flow equations."
   input BackendDAE.BackendDAE inDAE;
   output BackendDAE.BackendDAE outDAE;
@@ -277,7 +288,7 @@ algorithm
     //BackendDump.printShared(shared);
   end if;
 
-end stateMachineElab;
+end stateMachineElabDEACTIVATED;
 
 protected function synthesizeAutomataEqs "
 Author: BTH
@@ -313,7 +324,7 @@ Synthesize Automaton/state machine relevant data-flow equations.
   output BackendDAE.EqSystem systOut;
 protected
   DAE.ComponentRef initRef, resetRef, stateRef, activeResetStateRef, activeStateRef, activeResetRef, activeRef;
-  BackendDAE.Var initVar, resetVar, activePlotIndicatorVar;
+  BackendDAE.Var initVar, activePlotIndicatorVar;
   DAE.ComponentRef preRef, refiningRef, refiningResetRef, refiningActiveRef;
   Composition refiningComp;
   list<Composition> stateRefiningComps, refiningComps;
@@ -341,7 +352,7 @@ algorithm
   bindingKind := BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.BINDING_EQUATION(), BackendDAE.NO_LOOP());
 
   R(initialState, refining) := comp;
-  flatA := List.find(flatAs, function findInitialState(crefCmp=initialState));
+  flatA := List.find1(flatAs, findInitialState, initialState);
   FLAT_AUTOMATON(initialState, states, sms) := flatA;
   preRef := ComponentReference.crefPrefixString(SMS_PRE, initialState);
   nStates := arrayLength(states);
@@ -511,7 +522,7 @@ algorithm
         outLocalEqns :=  BackendDAE.EQUATION(exp, rhs, source, attr) :: outLocalEqns;
 
         // Find variable corresponding to componentRef
-        var := List.selectFirst1(outLocal,cmpVarCref,componentRef);
+        var := List.find1(outLocal,cmpVarCref,componentRef);
 
         // If lhs "x" is a state variable, i.e., "x" appears somewhere in the global equation system as "previous(x)",
         // than substitute all "previous(x)" by a fresh variable "x_previous" which is defined by an equation "x_previous = if resetOfState than initialValueOfX else previous(x)"
@@ -922,13 +933,11 @@ Succeeds if initialState in flatAIn equals the crefCmp, otherwise fails.
 Helper function to find flat automaton within a list of flat automata"
   input FlatAutomaton flatAIn;
   input DAE.ComponentRef crefCmp;
-  output FlatAutomaton flatAOut;
+  output Boolean outFound;
 algorithm
-  flatAOut := match flatAIn
-    local
-      DAE.ComponentRef cref;
-    case FLAT_AUTOMATON(initialState=cref) guard ComponentReference.crefEqual(cref,crefCmp) then flatAIn;
-    else fail();
+  outFound := match flatAIn
+    case FLAT_AUTOMATON() then ComponentReference.crefEqual(flatAIn.initialState, crefCmp);
+    else false;
   end match;
 end findInitialState;
 
@@ -2440,6 +2449,7 @@ algorithm
         mode1 = MODE(name1, isInitial1, edges1, eqs1, outgoing1,os1,ol1,ps1);
         modes = BaseHashTable.add((cstate1, mode1), inA);
 
+        // FIXME: I should just update the mode1 and not create a mode2???
         mode2 = if BaseHashTable.hasKey(cstate2, modes)
           then BaseHashTable.get(cstate2, modes)
             else MODE(ComponentReference.crefLastIdent(cstate1), false, HashSet.emptyHashSet(),
@@ -2499,8 +2509,10 @@ algorithm
     scalar := Expression.traverseExpBottomUp(scalar, subsPreForPrevious, NONE());
     // sample(0, samplingTime)
     expCond := DAE.ARRAY(DAE.T_ARRAY_BOOL_NODIM, true, {DAE.CALL(Absyn.IDENT("sample"), {DAE.ICONST(1), DAE.RCONST(0), DAE.RCONST(samplingTime)}, DAE.callAttrBuiltinImpureBool),DAE.CALL(Absyn.IDENT("initial"), {}, DAE.callAttrBuiltinImpureBool)});
-    whenEquation := BackendDAE.WHEN_EQ(expCond, left, scalar, NONE());
-    size := 1; // Fixme what is "size" for? does it reference the "sample index" of a corresponding (time)event BackendDAE.Shared.eventInfo.timeEvents
+    whenEquation := BackendDAE.WHEN_STMTS(expCond, {BackendDAE.ASSIGN(left, scalar, source)}, NONE());
+    // wbraun: size states how many scalar variable this equation is for
+    size := Expression.sizeOf(Expression.typeof(exp));
+    //size := 1; // Fixme what is "size" for? does it reference the "sample index" of a corresponding (time)event BackendDAE.Shared.eventInfo.timeEvents
     outEq := BackendDAE.WHEN_EQUATION(size, whenEquation, source,
       BackendDAE.EQUATION_ATTRIBUTES(differentiated, BackendDAE.DYNAMIC_EQUATION(), loopInfo));
   else

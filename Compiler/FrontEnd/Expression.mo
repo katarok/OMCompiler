@@ -1547,6 +1547,23 @@ algorithm
   end match;
 end expInt;
 
+public function getClockIntvl
+  input DAE.ClockKind inClk;
+  output DAE.Exp outIntvl;
+protected
+  DAE.Exp e;
+  Integer res;
+algorithm
+  outIntvl := match inClk
+    case DAE.INFERRED_CLOCK()
+      then DAE.RCONST(1.0);
+    case DAE.REAL_CLOCK(e)
+      then e;
+    case DAE.INTEGER_CLOCK(e, res)
+      then DAE.BINARY(e, DAE.DIV(DAE.T_REAL_DEFAULT), DAE.ICONST(res));
+  end match;
+end getClockIntvl;
+
 public function expArrayIndex
   "Returns the array index that an expression represents as an integer."
   input DAE.Exp inExp;
@@ -6040,6 +6057,7 @@ algorithm
       then (inExp, false, crefs);
     case (DAE.CALL(path = Absyn.IDENT(name = "der")), _) then (inExp, false, inCrefs);
     case (DAE.CALL(path = Absyn.IDENT(name = "pre")), _) then (inExp, false, inCrefs);
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous")), _) then (inExp, false, inCrefs);
     else (inExp,true,inCrefs);
   end match;
 end traversingComponentRefFinderNoPreDer;
@@ -6214,6 +6232,9 @@ algorithm
     case (DAE.CALL(path = Absyn.IDENT(name = "pre")), _)
       then (inExp,false,inTpl);
 
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous")), _)
+      then (inExp,false,inTpl);
+
     case (DAE.CREF(componentRef = cr1), (cr,false))
       equation
         b = ComponentReference.crefEqualNoStringCompare(cr,cr1);
@@ -6269,6 +6290,8 @@ algorithm
       DAE.ComponentRef cr,cr1;
 
     case (DAE.CALL(path = Absyn.IDENT(name = "pre")), _)
+      then (inExp,false,inTpl);
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous")), _)
       then (inExp,false,inTpl);
     case (DAE.CALL(path = Absyn.IDENT(name = "change")), _)
       then (inExp,false,inTpl);
@@ -7853,7 +7876,7 @@ algorithm
 
     // pre is not a vector function, adrpo: 2009-03-03 -> pre is also needed here!
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"))) then false;
-
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"))) then false;
     // inStream and actualStream are not a vector function, adrpo: 2010-08-31 -> they are also needed here!
     case (DAE.CALL(path = Absyn.IDENT(name = "inStream"))) then false;
     case (DAE.CALL(path = Absyn.IDENT(name = "actualStream"))) then false;
@@ -8023,6 +8046,8 @@ algorithm
 
     // pre(x) is not a function call
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"))) then false;
+
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"))) then false;
 
     // any other call is a function call
     case (DAE.CALL()) then true;
@@ -9181,6 +9206,8 @@ algorithm
 
     // pre(v) does not contain variable v
     case (DAE.CALL(path = Absyn.IDENT(name = "pre"),expLst = {_}),_) then false;
+
+    case (DAE.CALL(path = Absyn.IDENT(name = "previous"),expLst = {_}),_) then false;
 
     // special rule for no arguments
     case (DAE.CALL(expLst = {}),_) then false;
@@ -11211,17 +11238,28 @@ algorithm
   outExp := DAE.BINARY(inLhs, inOp, inRhs);
 end makeBinaryExp;
 
+public function checkExpDimensionSizes
+  "Extracts an integer from an exp"
+  input DAE.Exp dim;
+  output Boolean value;
+algorithm
+  value := matchcontinue(dim)
+    case DAE.ICONST() then if dim.integer > 0 then true else false;
+    else
+     false;
+  end matchcontinue;
+end checkExpDimensionSizes;
+
 public function checkDimensionSizes
-  "Extracts an integer from an array dimension. Also handles DIM_EXP and
+ "Extracts an integer from an array dimension. Also handles DIM_EXP and
   DIM_UNKNOWN if checkModel is used."
-  input DAE.Dimension dim;
+  input DAE.Dimension  dim;
   output Boolean value;
   protected
       Integer i;
       DAE.Exp e;
 algorithm
   value := matchcontinue(dim)
-
     case DAE.DIM_INTEGER(integer = i) then true;
     case DAE.DIM_ENUM(size = i) then true;
     case DAE.DIM_BOOLEAN() then true;
@@ -11254,6 +11292,27 @@ algorithm
       then {};
    end matchcontinue;
 end dimensionsList;
+
+
+public function expDimensionsList
+  "Extracts a list of integers from a list of expressions"
+  input list<DAE.Exp> inDims;
+  output list<Integer> outValues;
+protected
+  list<Boolean> boolHelperList;
+  list<Integer> dims;
+algorithm
+ outValues := matchcontinue(inDims)
+    case (_)
+    equation
+     boolHelperList = List.map(inDims, checkExpDimensionSizes);
+    true = List.reduce(boolHelperList,boolAnd);
+    dims = List.map(inDims, expInt);
+    then dims;
+    case (_)
+      then {};
+   end matchcontinue;
+end expDimensionsList;
 
 public function isCrefListWithEqualIdents
   "Checks if all expressions in the given list are crefs with the same identifiers.

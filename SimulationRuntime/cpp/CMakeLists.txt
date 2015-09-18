@@ -12,12 +12,13 @@
 #     if the Intel TBB library was found                                           -DUSE_INTEL_TBB
 #     if the Pugi XML library was found                                            -DUSE_PUGI_XML
 #     if profiling for the simulation runtime should be enabled                    -DRUNTIME_PROFILING
+#     if the equation systems of a FMU should be solved with kinsol                -DFMU_KINSOL
+#     if the logger should be used                                                 -DUSE_LOGGER
 #
 # Some of these options can be controlled by passing arguments to CMAKE
 #     if write output should be handled in parallel                                -DUSE_PARALLEL_OUTPUT=ON
 #     if ScoreP should be used for performance analysis                            -DUSE_SCOREP=ON
 #     if the boost libraries should be linked statically                           -DBOOST_STATIC_LINKING=ON
-#     if the lapack functions and data structurs of sundials should be used        -DSUNDIALS_LAPACK=ON
 #     if boost libraries should be linked against absolute path libraries          -DUSE_BOOST_REALPATHS=ON
 #
 #     Example: "cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo" to create statically linked libraries
@@ -36,8 +37,8 @@ OPTION(USE_PARALLEL_OUTPUT "USE_PARALLEL_OUTPUT" OFF)
 OPTION(USE_SCOREP "USE_SCOREP" OFF)
 OPTION(BOOST_STATIC_LINKING "BOOST_STATIC_LINKING" OFF)
 OPTION(RUNTIME_PROFILING "RUNTIME_PROFILING" OFF)
+OPTION(FMU_KINSOL "FMU_KINSOL" OFF)
 OPTION(SUNDIALS_ROOT "SUNDIALS ROOT" "")
-OPTION(BUILD_DOCUMENTATION "Use Doxygen to create the cpp runtime documentation" OFF)
 
 #Set Variables
 SET(MODELICAEXTERNALCDIR  "${CMAKE_SOURCE_DIR}/../../3rdParty/ModelicaExternalC/C-Sources")
@@ -102,14 +103,6 @@ ELSE(NOT BOOST_STATIC_LINKING)
   ADD_DEFINITIONS(-DBOOST_STATIC_LINKING)
 ENDIF(NOT BOOST_STATIC_LINKING)
 
-# Handle sundials lapack
-IF(NOT SUNDIALS_LAPACK)
-  MESSAGE(STATUS "Sundials lapack functions disabled")
-ELSE(NOT SUNDIALS_LAPACK)
-  MESSAGE(STATUS "Using Sundials lapack functions")
-  ADD_DEFINITIONS(-DUSE_SUNDIALS_LAPACK)
-ENDIF(NOT SUNDIALS_LAPACK)
-
 # Handle parallel output
 IF(USE_PARALLEL_OUTPUT)
   ADD_DEFINITIONS(-DUSE_PARALLEL_OUTPUT)
@@ -139,6 +132,26 @@ IF(RUNTIME_PROFILING)
 ELSE(RUNTIME_PROFILING)
   MESSAGE(STATUS "Runtime profiling disabled")
 ENDIF(RUNTIME_PROFILING)
+
+# Handle FMU kinsol support
+IF(FMU_KINSOL)
+  ADD_DEFINITIONS(-DFMU_KINSOL)
+  SET(USE_FMU_KINSOL_ "ON")
+  MESSAGE(STATUS "FMU kinsol enabled")
+ELSE(FMU_KINSOL)
+  SET(USE_FMU_KINSOL_ "OFF")
+  MESSAGE(STATUS "FMU kinsol disabled")
+ENDIF(FMU_KINSOL)
+
+# Handle Logger usage
+IF(USE_LOGGER)
+  ADD_DEFINITIONS(-DUSE_LOGGER)
+  SET(USE_LOGGER_ "ON")
+  MESSAGE(STATUS "Logger enabled")
+ELSE(USE_LOGGER)
+  MESSAGE(STATUS "Logger disabled")
+  SET(USE_LOGGER_ "OFF")
+ENDIF(USE_LOGGER)
 
 # Handle build type
 IF(OMC_BUILD)
@@ -179,6 +192,25 @@ IF(WIN32)
   SET(INSTALL_OMDEV_LIBS ON)
 ENDIF(WIN32)
 
+# Find OpenMP
+FIND_PACKAGE(OpenMP)
+IF(OPENMP_FOUND)
+  MESSAGE(STATUS "OPENMP enabled")
+  SET(USE_OPENMP_ "ON")
+ELSE(OPENMP_FOUND)
+  MESSAGE(STATUS "OPENMP disabled")
+  SET(USE_OPENMP_ "OFF")
+ENDIF(OPENMP_FOUND)
+
+# Find MPI
+FIND_PACKAGE(MPI)
+IF(MPI_FOUND)
+  MESSAGE(STATUS "MPI enabled")
+  SET(USE_MPI_ "ON")
+ELSE(MPI_FOUND)
+  MESSAGE(STATUS "MPI disabled")
+  SET(USE_MPI_ "OFF")
+ENDIF(MPI_FOUND)
 
 # Find CMinpack
 # Note: Visual Studio libs are located in install/msvc, libs for gcc are directly in install
@@ -362,36 +394,13 @@ IF(USE_SUNDIALS)
   ENDIF(WIN32)
 ENDIF(USE_SUNDIALS)
 
-#-- generate documentation of cpp runtime with doxygen
-if(BUILD_DOCUMENTATION)
-  FIND_PACKAGE(Doxygen)
-  if (NOT DOXYGEN_FOUND)
-    message(FATAL_ERROR
-      "Doxygen is needed to build the documentation. Please install it correctly")
-  endif()
-   MESSAGE(STATUS "Build the documentation with Doxygen")
-  #-- Configure the Template Doxyfile for our specific project
-  configure_file(cppruntimedoc.config.in
-                 ${PROJECT_BINARY_DIR}/cppruntimedoc.config  @ONLY IMMEDIATE)
-  #-- Add a custom target to run Doxygen when ever the project is built
-  add_custom_target (Docs ALL
-                     ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/cppruntimedoc.config
-                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-                     COMMENT "Generating API documentation with Doxygen" VERBATIM
-                    )
-  # IF you do NOT want the documentation to be generated EVERY time you build the project
-  # then leave out the 'ALL' keyword from the above command.
-endif()
-
-
-
 #Handle umfpack
 FIND_PACKAGE(SuiteSparse)
 IF(SUITESPARSE_UMFPACK_FOUND)
-  MESSAGE(STATUS "Using UmfPack")
+  MESSAGE(STATUS "Using UmfPack include path: ${SUITESPARSE_UMFPACK_INCLUDE_DIR}")
   INCLUDE_DIRECTORIES(${SUITESPARSE_UMFPACK_INCLUDE_DIR})
-  ADD_DEFINITIONS(-DUSE_UMFPACK)
-    SET(SUITESPARSE_INCLUDE ${SUITESPARSE_UMFPACK_INCLUDE_DIR})
+  #ADD_DEFINITIONS(-DUSE_UMFPACK)
+  SET(SUITESPARSE_INCLUDE ${SUITESPARSE_UMFPACK_INCLUDE_DIR})
   SET(UMFPACK_LIB ${SUITESPARSE_UMFPACK_LIBRARIES})
 ELSE(SUITESPARSE_UMFPACK_FOUND)
   MESSAGE(STATUS "UmfPack disabled")
@@ -462,37 +471,37 @@ endif()
 
 
 
-if(USE_SUNDIALS)
-#add  Cvode solver project
-add_subdirectory (Solver/CVode)
-#add_subdirectory (Solver/ARKode)
-add_subdirectory(Solver/IDA)
-add_subdirectory (Solver/Kinsol)
-#add  Idas solver project
-##add_subdirectory (Solver/Idas/Implementation)
-##add_subdirectory (Solver/Ida/Implementation)
-GET_TARGET_PROPERTY(libCVode ${CVodeName} LOCATION)
-GET_TARGET_PROPERTY(libARKode ${ARKodeName} LOCATION)
-GET_FILENAME_COMPONENT(libCVodeName ${libCVode} NAME)
-GET_FILENAME_COMPONENT(libARKodeName ${libARKode} NAME)
+IF(USE_SUNDIALS)
+  #add  Cvode solver project
+  ADD_SUBDIRECTORY (Solver/CVode)
+  #add_subdirectory (Solver/ARKode)
+  ADD_SUBDIRECTORY(Solver/IDA)
+  ADD_SUBDIRECTORY(Solver/Kinsol)
+  #add  Idas solver project
+  ##add_subdirectory (Solver/Idas/Implementation)
+  ##add_subdirectory (Solver/Ida/Implementation)
+  GET_TARGET_PROPERTY(libCVode ${CVodeName} LOCATION)
+  GET_TARGET_PROPERTY(libARKode ${ARKodeName} LOCATION)
+  GET_FILENAME_COMPONENT(libCVodeName ${libCVode} NAME)
+  GET_FILENAME_COMPONENT(libARKodeName ${libARKode} NAME)
 
-GET_TARGET_PROPERTY(libIDA ${IDAName} LOCATION)
-GET_FILENAME_COMPONENT(libIDAName ${libIDA} NAME)
+  GET_TARGET_PROPERTY(libIDA ${IDAName} LOCATION)
+  GET_FILENAME_COMPONENT(libIDAName ${libIDA} NAME)
 
-GET_TARGET_PROPERTY(libKinsol ${KinsolName} LOCATION)
-GET_FILENAME_COMPONENT(libKinsolName ${libKinsol} NAME)
-#GET_TARGET_PROPERTY(libIdas ${IdasName} LOCATION)
-#GET_FILENAME_COMPONENT(libIdasName ${libIdas} NAME)
-#GET_TARGET_PROPERTY(libIda ${IdaName} LOCATION)
-#GET_FILENAME_COMPONENT(libIdaName ${libIda} NAME)
+  GET_TARGET_PROPERTY(libKinsol ${KinsolName} LOCATION)
+  GET_FILENAME_COMPONENT(libKinsolName ${libKinsol} NAME)
+  #GET_TARGET_PROPERTY(libIdas ${IdasName} LOCATION)
+  #GET_FILENAME_COMPONENT(libIdasName ${libIdas} NAME)
+  #GET_TARGET_PROPERTY(libIda ${IdaName} LOCATION)
+  #GET_FILENAME_COMPONENT(libIdaName ${libIda} NAME)
 
-#set (IDAS_LIB ${libIdasName})
-set (CVODE_LIB ${libCVodeName})
-set (ARKODE_LIB ${libARKodeName})
-set(IDA_LIB ${libIDAName})
-set (KINSOL_LIB ${libKinsolName})
-#set (IDA_LIB ${libIdaName})
-endIf()
+  #set (IDAS_LIB ${libIdasName})
+  SET(CVODE_LIB ${libCVodeName})
+  SET(ARKODE_LIB ${libARKodeName})
+  SET(IDA_LIB ${libIDAName})
+  SET(KINSOL_LIB ${libKinsolName})
+  #set(IDA_LIB ${libIdaName})
+ENDIF(USE_SUNDIALS)
 
 GET_TARGET_PROPERTY(libPeer ${PeerName} LOCATION)
 GET_FILENAME_COMPONENT(libPeerName ${libPeer} NAME)

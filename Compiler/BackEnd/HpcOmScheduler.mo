@@ -2475,10 +2475,11 @@ algorithm
           extInfo = HpcOmSchedulerExt.scheduleMetis(xadj, adjncy, vwgt, adjwgt, iNumberOfThreads);
           extInfoArr = listArray(extInfo);
         else
-          extInfoArr = arrayCreate(arrayLength(iTaskGraph), -1);
+          extInfoArr = arrayCreate(arrayLength(iTaskGraph), 1);
+          extInfo = arrayList(extInfoArr);
         end if;
 
-        //print("External scheduling info: " + stringDelimitList(List.map(extInfo, intString), ",") + "\n");
+        //print("Metis scheduling info: " + stringDelimitList(List.map(extInfo, intString), ",") + "\n");
         true = intEq(arrayLength(iTaskGraph),arrayLength(extInfoArr));
         taskGraphT = BackendDAEUtil.transposeMatrix(iTaskGraph,arrayLength(iTaskGraph));
         rootNodes = HpcOmTaskGraph.getRootNodes(iTaskGraph);
@@ -3622,42 +3623,27 @@ end TDS_replaceSimEqSysIdxInJacobianColumn;
 protected function TDS_updateModelInfo"updated information in the SimCode.ModelInfo e.g.the number of variables,numLS, numNLS,"
   input SimCode.SimCode simCodeIn;
   input tuple<Integer,Integer,Integer,Integer,Integer,Integer,Integer,Integer> idcs;
-  output SimCode.SimCode simCodeOut;
+  output SimCode.SimCode simCodeOut = simCodeIn;
 protected
-  Integer numZeroCrossings,numTimeEvents,numRelations,numMathEventFunctions,numStateVars,numAlgVars,numDiscreteReal,numIntAlgVars,numBoolAlgVars,numAlgAliasVars,numIntAliasVars,
-  numBoolAliasVars,numParams,numIntParams,numBoolParams,numOutVars,numInVars,numExternalObjects,numStringAlgVars,
-  numStringParamVars,numStringAliasVars,numEquations,numLinearSystems,numNonLinearSystems,numMixedSystems,numStateSets,numJacobians,numOptimizeConstraints,numOptimizeFinalConstraints;
-  Integer threadIdx,taskIdx,compIdx,simVarIdx,simEqSysIdx,lsIdx,nlsIdx,mIdx,maxDer;
+  Integer lsIdx, nlsIdx, mIdx;
   SimCode.ModelInfo modelInfo;
-  Absyn.Path name;
-  String description;
-  String directory;
   SimCode.VarInfo varInfo;
-  SimCodeVar.SimVars vars;
-  list<SimCode.Function> functions;
-  list<SimCodeVar.SimVar> algVars,stateVars;
-  list<String> labels;
 algorithm
   // get the data
-  (threadIdx,taskIdx,compIdx,simVarIdx,simEqSysIdx,lsIdx,nlsIdx,mIdx) := idcs;
-  SimCode.SIMCODE(modelInfo = modelInfo) := simCodeIn;
-  SimCode.MODELINFO(name,description,directory,varInfo,vars,functions,labels, maxDer) := modelInfo;
-  SimCodeVar.SIMVARS(stateVars=stateVars, algVars = algVars) := vars;
-  SimCode.VARINFO(numZeroCrossings,numTimeEvents,numRelations,numMathEventFunctions,numStateVars,numAlgVars,numDiscreteReal,numIntAlgVars,numBoolAlgVars,numAlgAliasVars,numIntAliasVars,
-  numBoolAliasVars,numParams,numIntParams,numBoolParams,numOutVars,numInVars,numExternalObjects,numStringAlgVars,numStringParamVars,
-  numStringAliasVars,numEquations,numLinearSystems,numNonLinearSystems,numMixedSystems,numStateSets,numJacobians,numOptimizeConstraints,numOptimizeFinalConstraints) := varInfo;
+  (_, _, _, _, _, lsIdx, nlsIdx, mIdx) := idcs;
+  modelInfo := simCodeIn.modelInfo;
+  varInfo := modelInfo.varInfo;
+
   // get new values
-  numStateVars := listLength(stateVars);
-  numAlgVars := listLength(algVars);
-  numLinearSystems := if intEq(numLinearSystems,0) then 0 else lsIdx;
-  numNonLinearSystems := if intEq(numNonLinearSystems,0) then 0 else nlsIdx;
+  varInfo.numStateVars := listLength(modelInfo.vars.stateVars);
+  varInfo.numAlgVars := listLength(modelInfo.vars.algVars);
+  varInfo.numLinearSystems := if intEq(varInfo.numLinearSystems, 0) then 0 else lsIdx;
+  varInfo.numNonLinearSystems := if intEq(varInfo.numNonLinearSystems, 0) then 0 else nlsIdx;
   //numMixedSystems := mIdx;
   //update objects
-  varInfo := SimCode.VARINFO(numZeroCrossings,numTimeEvents,numRelations,numMathEventFunctions,numStateVars,numAlgVars,numDiscreteReal,numIntAlgVars,numBoolAlgVars,numAlgAliasVars,numIntAliasVars,
-  numBoolAliasVars,numParams,numIntParams,numBoolParams,numOutVars,numInVars,numExternalObjects,numStringAlgVars,numStringParamVars,
-  numStringAliasVars,numEquations,numLinearSystems,numNonLinearSystems,numMixedSystems,numStateSets,numJacobians,numOptimizeConstraints,numOptimizeFinalConstraints);
-  modelInfo := SimCode.MODELINFO(name,description,directory,varInfo,vars,functions,labels, maxDer);
-  simCodeOut := SimCodeUtil.replaceModelInfo(modelInfo,simCodeIn);
+
+  modelInfo.varInfo := varInfo;
+  simCodeOut.modelInfo := modelInfo;
 end TDS_updateModelInfo;
 
 protected function TDS_duplicateTasks"traverses the clusters, duplicate the tasks that have been assigned to another thread before.
@@ -4145,6 +4131,7 @@ algorithm
       Option<SimCode.JacobianMatrix> jac;
       Boolean homotopySupport;
       Boolean mixedSystem;
+      list<BackendDAE.WhenOperator> whenStmtLst;
     case(SimCode.SES_RESIDUAL(index=idx,exp=exp,source=source),_)
       equation
         (exp,changed) = BackendVarTransform.replaceExp(exp,replIn,NONE());
@@ -4208,7 +4195,7 @@ algorithm
         changed = List.fold(bLst,boolOr,changed);
         simEqSys = SimCode.SES_MIXED(idx,simEqSys,simVars,simEqSysLst,idxMS);
     then (simEqSys,changed);
-    case(SimCode.SES_WHEN(index=idx,conditions=crefs,initialCall=ic,left=cref,right=exp,elseWhen=NONE(),source=source),_)
+    case(SimCode.SES_WHEN(index=idx,conditions=crefs,initialCall=ic,whenStmtLst={BackendDAE.ASSIGN(left=cref,right=exp)},elseWhen=NONE(),source=source),_)
       equation
         (crefExps,bLst) = List.map1_2(crefs,BackendVarTransform.replaceCref,replIn);
         crefs = List.map(crefExps,Expression.expCref);
@@ -4216,9 +4203,9 @@ algorithm
         changed = List.fold(bLst,boolOr,changed);
         (exp,changed1) = BackendVarTransform.replaceExp(exp,replIn,NONE());
         changed = boolOr(changed,changed1);
-        simEqSys = SimCode.SES_WHEN(idx,crefs,ic,cref,exp,NONE(),source);
+        simEqSys = SimCode.SES_WHEN(idx,crefs,ic,{BackendDAE.ASSIGN(cref, exp, source)},NONE(),source);
     then (simEqSys,changed);
-    case(SimCode.SES_WHEN(index=idx,conditions=crefs,initialCall=ic,left=cref,right=exp,elseWhen=SOME(simEqSys),source=source),_)
+    case(SimCode.SES_WHEN(index=idx,conditions=crefs,initialCall=ic,whenStmtLst={BackendDAE.ASSIGN(left=cref,right=exp)},elseWhen=SOME(simEqSys),source=source),_)
       equation
         (crefExps,bLst) = List.map1_2(crefs,BackendVarTransform.replaceCref,replIn);
         crefs = List.map(crefExps,Expression.expCref);
@@ -4228,7 +4215,7 @@ algorithm
         changed = boolOr(changed,changed1);
         (simEqSys,changed1) = replaceExpsInSimEqSystem(simEqSys,replIn);
         changed = boolOr(changed,changed1);
-        simEqSys = SimCode.SES_WHEN(idx,crefs,ic,cref,exp,SOME(simEqSys),source);
+        simEqSys = SimCode.SES_WHEN(idx,crefs,ic,{BackendDAE.ASSIGN(cref, exp, source)},SOME(simEqSys),source);
     then (simEqSys,changed);
   else
     equation
@@ -4241,35 +4228,22 @@ protected function replaceCrefInSimVar"performs replacements on a simVar structu
 author: Waurich TUD 2014-06"
   input SimCodeVar.SimVar simVarIn;
   input BackendVarTransform.VariableReplacements replIn;
-  output SimCodeVar.SimVar simVarOut;
+  output SimCodeVar.SimVar simVarOut = simVarIn;
   output Boolean changedOut;
+protected
+  DAE.ComponentRef name;
 algorithm
-    (simVarOut,changedOut) := matchcontinue(simVarIn,replIn)
-      local
-        Boolean isFixed,isDiscrete,isValueChangeable,isProtected;
-        Integer index;
-        String comment, unit, displayUnit;
-        list<String> numArrayElement;
-        BackendDAE.VarKind varKind;
-        DAE.ComponentRef name;
-        DAE.Type type_;
-        DAE.ElementSource source;
-        SimCodeVar.AliasVariable aliasvar;
-        SimCodeVar.Causality causality;
-        SimCodeVar.SimVar simVar;
-        Option<Integer> variable_index;
-        Option<DAE.ComponentRef> arrayCref;
-        Option<DAE.Exp> minValue,maxValue,initialValue,nominalValue;
-    case(SimCodeVar.SIMVAR(name=name,varKind=varKind,comment=comment,unit=unit,displayUnit=displayUnit,index=index,minValue=minValue,maxValue=maxValue,initialValue=initialValue,
-         nominalValue=nominalValue,isFixed=isFixed,type_=type_,isDiscrete=isDiscrete,arrayCref=arrayCref,aliasvar=aliasvar,source=source,causality=causality,variable_index=variable_index,
-         numArrayElement=numArrayElement,isValueChangeable=isValueChangeable,isProtected=isProtected),_)
-      equation
-        true = BackendVarTransform.hasReplacement(replIn,name);
-        DAE.CREF(componentRef=name) = BackendVarTransform.getReplacement(replIn,name);
-        simVar = SimCodeVar.SIMVAR(name,varKind,comment,unit,displayUnit,index,minValue,maxValue,initialValue,nominalValue,isFixed,type_,isDiscrete,arrayCref,aliasvar,source,causality,variable_index,numArrayElement,isValueChangeable,isProtected);
-      then (simVar,true);
-    else (simVarIn,false);
-  end matchcontinue;
+  try
+    if BackendVarTransform.hasReplacement(replIn, simVarIn.name) then
+      DAE.CREF(componentRef=name) := BackendVarTransform.getReplacement(replIn, simVarIn.name);
+      simVarOut.name := name;
+      changedOut := true;
+    else
+      changedOut := false;
+    end if;
+  else
+    changedOut := false;
+  end try;
 end replaceCrefInSimVar;
 
 protected function replaceInSimJac"replaces the row of a simJac.
@@ -5732,6 +5706,11 @@ algorithm
         printPredictedExeTimeInfo(serTime,parTime,speedUp,speedUpMax,numProcIn);
       then
         criticalPathInfo;
+    case(HpcOmSimCode.TASKDEPSCHEDULE(),_,_,_,_)
+      equation
+        ((criticalPaths,cpCosts),(criticalPathsWoC,cpCostsWoC)) = HpcOmTaskGraph.getCriticalPaths(taskGraphIn,taskGraphMetaIn);
+        criticalPathInfo = HpcOmTaskGraph.dumpCriticalPathInfo((criticalPaths,cpCosts),(criticalPathsWoC,cpCostsWoC));
+      then criticalPathInfo;
     else
       equation
         print("HpcOmScheduler.analyseScheduledTaskGraph failed\n");

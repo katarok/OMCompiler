@@ -89,8 +89,7 @@ uniontype SimCode
     list<SimEqSystem> allEquations;
     list<list<SimEqSystem>> odeEquations;
     list<list<SimEqSystem>> algebraicEquations;
-    list<BackendDAE.BaseClockPartitionKind> partitionsKind;
-    list<DAE.ClockKind> baseClocks;
+    list<ClockedPartition> clockedPartitions;
     Boolean useHomotopy "true if homotopy(...) is used during initialization";
     list<SimEqSystem> initialEquations;
     list<SimEqSystem> removedInitialEquations;
@@ -110,7 +109,6 @@ uniontype SimCode
     list<BackendDAE.ZeroCrossing> zeroCrossings;
     list<BackendDAE.ZeroCrossing> relations "only used by c runtime";
     list<BackendDAE.TimeEvent> timeEvents "only used by c runtime yet";
-    list<SimWhenClause> whenClauses;
     list<DAE.ComponentRef> discreteModelVars;
     ExtObjInfo extObjInfo;
     MakefileParams makefileParams;
@@ -130,6 +128,22 @@ uniontype SimCode
     Option<FmiModelStructure> modelStructure;
   end SIMCODE;
 end SimCode;
+
+public uniontype ClockedPartition
+  record CLOCKED_PARTITION
+    DAE.ClockKind baseClock;
+    list<SubPartition> subPartitions;
+  end CLOCKED_PARTITION;
+end ClockedPartition;
+
+public uniontype SubPartition
+  record SUBPARTITION
+    list<SimEqSystem> equations;
+    list<SimEqSystem> removedEquations;
+    BackendDAE.SubClock subClock;
+    Boolean holdEvents;
+  end SUBPARTITION;
+end SubPartition;
 
 public
 uniontype BackendMapping
@@ -180,6 +194,8 @@ uniontype ModelInfo "Container for metadata about a Modelica model."
     list<String> labels;
     //Files files "all the files from SourceInfo and DAE.ELementSource";
     Integer maxDer "the highest derivative in the model";
+    Integer nClocks;
+    Integer nSubClocks;
   end MODELINFO;
 end ModelInfo;
 
@@ -240,7 +256,7 @@ uniontype Function
     list<Variable> outVars;
     list<Variable> functionArguments;
     list<Variable> variableDeclarations;
-    list<Statement> body;
+    list<DAE.Statement> body;
     SCode.Visibility visibility;
     SourceInfo info;
   end FUNCTION;
@@ -250,7 +266,7 @@ uniontype Function
     list<Variable> outVars;
     list<Variable> functionArguments;
     list<Variable> variableDeclarations;
-    list<Statement> body;
+    list<DAE.Statement> body;
     SourceInfo info;
   end PARALLEL_FUNCTION;
 
@@ -259,7 +275,7 @@ uniontype Function
     list<Variable> outVars;
     list<Variable> functionArguments;
     list<Variable> variableDeclarations;
-    list<Statement> body;
+    list<DAE.Statement> body;
     SourceInfo info;
   end KERNEL_FUNCTION;
 
@@ -349,13 +365,6 @@ uniontype Variable
   end FUNCTION_PTR;
 end Variable;
 
-// TODO: Replace Statement with just list<DAE.Statement>?
-uniontype Statement
-  record ALGORITHM
-    list<DAE.Statement> statementLst; // in functions
-  end ALGORITHM;
-end Statement;
-
 uniontype SimEqSystem
   "Represents a single equation or a system of equations that must be solved together."
   record SES_RESIDUAL
@@ -419,8 +428,7 @@ uniontype SimEqSystem
     Integer index;
     list<DAE.ComponentRef> conditions "list of boolean variables as conditions";
     Boolean initialCall "true, if top-level branch with initial()";
-    DAE.ComponentRef left;
-    DAE.Exp right;
+    list<BackendDAE.WhenOperator> whenStmtLst;
     Option<SimEqSystem> elseWhen;
     DAE.ElementSource source;
   end SES_WHEN;
@@ -478,16 +486,6 @@ uniontype StateSet
     JacobianMatrix jacobianMatrix;
   end SES_STATESET;
 end StateSet;
-
-uniontype SimWhenClause
-  record SIM_WHEN_CLAUSE
-    list<DAE.ComponentRef> conditionVars "is no longer needed";
-    list<DAE.ComponentRef> conditions "list of boolean variables as conditions";
-    Boolean initialCall "true, if top-level branch with initial()";
-    list<BackendDAE.WhenOperator> reinits;
-    Option<BackendDAE.WhenEquation> whenEq;
-  end SIM_WHEN_CLAUSE;
-end SimWhenClause;
 
 uniontype ExtObjInfo
   record EXTOBJINFO

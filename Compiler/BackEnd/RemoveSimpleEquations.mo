@@ -1450,19 +1450,7 @@ algorithm
       BackendDAE.Variables vars, knvars;
       list<Integer> ilst;
       list<BackendDAE.Var> vlst;
-    // a = const
-    // wbraun:
-    // speacial case for Jacobains, since there are all known variablen
-    // time depending input variables
-    case (_, _, _, _, (vars, BackendDAE.SHARED(knownVars=knvars, backendDAEType = BackendDAE.JACOBIAN()), _, _, _, _, _))
-      equation
-        // collect vars and check if variable time not there
-        (_, (false, _, _, _, _, ilst)) = Expression.traverseExpTopDown(lhs, traversingTimeVarsFinder, (false, vars, knvars, true, false, {}));
-        (_, (false, _, _, _, _, ilst)) = Expression.traverseExpTopDown(rhs, traversingTimeVarsFinder, (false, vars, knvars, true, false, ilst));
-        ilst = List.uniqueIntN(ilst, BackendVariable.varsSize(vars));
-        vlst = List.map1r(ilst, BackendVariable.getVarAt, vars);
-      then
-        solveTimeIndependentAcausal(vlst, ilst, lhs, rhs, eqnAttributes, inTpl);
+
     case (_, _, _, _, (vars, BackendDAE.SHARED(knownVars=knvars), _, _, _, _, _))
       equation
         // collect vars and check if variable time not there
@@ -1496,17 +1484,7 @@ algorithm
       BackendDAE.Variables vars, knvars;
       list<Integer> ilst;
       list<BackendDAE.Var> vlst;
-    case (_, _, _, (vars, BackendDAE.SHARED(knownVars=knvars, backendDAEType = BackendDAE.JACOBIAN()), _, _, _, _, _))
-      equation
-        // collect vars and check if variable time not there
-        (_, (false, _, _, _, _, ilst)) = Expression.traverseExpTopDown(exp, traversingTimeVarsFinder, (false, vars, knvars, true, false, {}));
-        ilst = List.uniqueIntN(ilst, BackendVariable.varsSize(vars));
-        vlst = List.map1r(ilst, BackendVariable.getVarAt, vars);
-        ty = Expression.typeof(exp);
-        e2 = Expression.makeConstZero(ty);
-      then
-        // shoulde be ok since solve checks only for iszero
-        solveTimeIndependentAcausal(vlst, ilst, exp, e2, eqnAttributes, inTpl);
+
     case (_, _, _, (vars, BackendDAE.SHARED(knownVars=knvars), _, _, _, _, _))
       equation
         // collect vars and check if variable time not there
@@ -1549,11 +1527,10 @@ algorithm
       Boolean b, b1, b2;
       BackendDAE.Variables vars, knvars;
       DAE.ComponentRef cr;
-      BackendDAE.Var var;
       list<Integer> ilst, vlst;
       list<BackendDAE.Var> varlst;
 
-    case (DAE.CREF(DAE.CREF_IDENT(ident = "time", subscriptLst = {}), _), (_, vars, knvars, b1, b2, ilst))
+    case (DAE.CREF(DAE.CREF_IDENT(ident="time", subscriptLst={}), _), (_, vars, knvars, b1, b2, ilst))
     then (inExp, false, (true, vars, knvars, b1, b2, ilst));
 
     case (DAE.CREF(cr, _), (_, vars, knvars, b1, b2, ilst)) equation
@@ -1561,16 +1538,10 @@ algorithm
       false = List.mapAllValueBool(varlst, toplevelInputOrUnfixed, false);
     then (inExp, false, (true, vars, knvars, b1, b2, ilst));
 
-    case (DAE.CALL(path = Absyn.IDENT(name = "pre")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst) );
-    case (DAE.CALL(path = Absyn.IDENT(name = "change")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst) );
-    case (DAE.CALL(path = Absyn.IDENT(name = "edge")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst) );
-
-    // case for finding simple equation in jacobians
-    // there are all known variables mark as input and they are all time-depending
-    case (DAE.CREF(cr, _), (_, vars, knvars, true, b2, ilst)) equation
-      (var::_, _::_)= BackendVariable.getVar(cr, knvars) "input variables stored in known variables are input on top level";
-      DAE.INPUT() = BackendVariable.getVarDirection(var);
-    then (inExp, false, (true, vars, knvars, true, b2, ilst));
+    case (DAE.CALL(path = Absyn.IDENT(name="pre")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst));
+    case (DAE.CALL(path = Absyn.IDENT(name="previous")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst) );
+    case (DAE.CALL(path = Absyn.IDENT(name="change")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst));
+    case (DAE.CALL(path = Absyn.IDENT(name="edge")), (_, vars, knvars, b1, b2, ilst)) then (inExp, false, (true, vars, knvars, b1, b2, ilst));
 
     // var
     case (DAE.CREF(cr, _), (b, vars, knvars, b1, b2, ilst)) equation
@@ -3550,11 +3521,10 @@ algorithm
       list<BackendDAE.Var> varlst;
       Boolean b1;
       BackendDAE.Shared shared;
-      BackendDAE.EventInfo eventInfo;
 
     case (false, _) then inDAE;
     case (true, BackendDAE.DAE(systs, shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns,
-                                                                   constraints=constraintsLst, classAttrs=clsAttrsLst, eventInfo=eventInfo )))
+                                                                   constraints=constraintsLst, classAttrs=clsAttrsLst )))
       equation
         if Flags.isSet(Flags.DUMP_REPL) then
           BackendVarTransform.dumpReplacements(repl);
@@ -3574,10 +3544,6 @@ algorithm
         ((_, eqnslst, _)) = BackendEquation.traverseEquationArray(shared.removedEqs, replaceEquationTraverser, (repl, {}, false));
         eqnslst = List.select(eqnslst, BackendEquation.assertWithCondTrue);
         shared.removedEqs = BackendEquation.listEquation(eqnslst);
-
-        (eventInfo.whenClauseLst, _) =
-            BackendVarTransform.replaceWhenClauses(eventInfo.whenClauseLst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
-        shared.eventInfo = eventInfo;
 
         (constraintsLst, clsAttrsLst) = replaceOptimicaExps(constraintsLst, clsAttrsLst, repl);
         shared.constraints = constraintsLst;
@@ -4186,20 +4152,41 @@ algorithm
       DAE.ComponentRef left;
       BackendDAE.WhenEquation weqn;
       HashSet.HashSet hs;
-    case (BackendDAE.WHEN_EQ(left=left, elsewhenPart=NONE()), _)
+      list<BackendDAE.WhenOperator> whenStmtLst;
+      Option<BackendDAE.WhenEquation> oweqn;
+
+    case (BackendDAE.WHEN_STMTS(whenStmtLst=whenStmtLst,elsewhenPart=oweqn), _)
       equation
-        left = ComponentReference.crefStripLastSubs(left);
-        hs = BaseHashSet.add(left, iHs);
-      then
-        hs;
-    case (BackendDAE.WHEN_EQ(left=left, elsewhenPart=SOME(weqn)), _)
-      equation
-        left = ComponentReference.crefStripLastSubs(left);
-        hs = BaseHashSet.add(left, iHs);
-      then
-        addUnreplaceableFromWhen(weqn, hs);
+       hs = addUnreplaceableFromWhenOps(whenStmtLst, iHs);
+       if isSome(oweqn) then
+         SOME(weqn) = oweqn;
+         hs = addUnreplaceableFromWhen(weqn, hs);
+       end if;
+       then hs;
   end match;
 end addUnreplaceableFromWhen;
+
+protected function addUnreplaceableFromWhenOps
+"This is a helper function for addUnreplaceableFromWhenEqn."
+  input list<BackendDAE.WhenOperator> inWhenOps;
+  input HashSet.HashSet iHs;
+  output HashSet.HashSet oHs;
+algorithm
+  oHs := match(inWhenOps)
+  local
+    DAE.ComponentRef left;
+    list<BackendDAE.WhenOperator> rest;
+    HashSet.HashSet hs;
+
+    case BackendDAE.ASSIGN(left = left)::rest
+      equation
+        left = ComponentReference.crefStripLastSubs(left);
+        hs = BaseHashSet.add(left, iHs);
+      then addUnreplaceableFromWhenOps(rest, hs);
+    else
+      then iHs;
+  end match;
+end addUnreplaceableFromWhenOps;
 
 protected function traverserExpUnreplaceable
   input DAE.Exp e;
@@ -4353,7 +4340,6 @@ algorithm
       DAE.FunctionTree funcTree;
       BackendDAE.ExternalObjectClasses eoc;
       BackendDAE.SymbolicJacobians symjacs;
-      list<BackendDAE.WhenClause> whenClauseLst, whenClauseLst1;
       BackendDAE.EqSystems systs, systs1;
       list<BackendDAE.Equation> eqnslst;
       list<BackendDAE.Var> varlst;
@@ -4362,7 +4348,7 @@ algorithm
 
     case ( syst as BackendDAE.EQSYSTEM(orderedVars=orderedVars, orderedEqs=orderedEqs, removedEqs=remeqns),
            shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns,
-                                       eventInfo=eventInfo as BackendDAE.EVENT_INFO(whenClauseLst=whenClauseLst )) )
+                                       eventInfo=eventInfo) )
       equation
 
       // sizes of Hash tables are system dependent!!!!
@@ -4425,10 +4411,6 @@ algorithm
       (aliasVars, (_, varlst)) = BackendVariable.traverseBackendDAEVarsWithUpdate(aliasVars, replaceAliasVarTraverser, (repl, {}));
       aliasVars = List.fold(varlst, fixAliasConstBindings, aliasVars);
       (knvars, _) = BackendVariable.traverseBackendDAEVarsWithUpdate(knvars, replaceVarTraverser, repl);
-      // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-      // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-      // Update whenClauseLst !!!
-      (whenClauseLst, _) = BackendVarTransform.replaceWhenClauses(whenClauseLst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
 
       // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
       // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
@@ -4453,7 +4435,6 @@ algorithm
       syst.orderedVars = orderedVars;
       syst.orderedEqs = orderedEqs;
 
-      eventInfo.whenClauseLst = whenClauseLst;
       shared.eventInfo = eventInfo;
       shared.knownVars = knvars;
       shared.aliasVars = aliasVars;

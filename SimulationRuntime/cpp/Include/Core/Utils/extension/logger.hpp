@@ -8,8 +8,6 @@
 #ifndef LOGGER_HPP_
 #define LOGGER_HPP_
 
-#include <Core/Modelica.h>
-
 class BOOST_EXTENSION_LOGGER_DECL Logger
 {
   public:
@@ -36,16 +34,24 @@ class BOOST_EXTENSION_LOGGER_DECL Logger
       initialize(LogSettings());
     }
 
-    static void write(std::string msg, LogCategory cat, LogLevel lvl)
+    static inline void write(std::string msg, LogCategory cat, LogLevel lvl)
     {
+#ifndef USE_LOGGER
+      return;
+#else
       Logger* instance = getInstance();
       if(instance && instance->isEnabled())
         instance->writeInternal(msg, cat, lvl);
+#endif
     }
 
-    static void write(std::string msg, std::pair<LogCategory,LogLevel> mode)
+    static inline void write(std::string msg, std::pair<LogCategory,LogLevel> mode)
     {
+#ifndef USE_LOGGER
+      return;
+#else
       write(msg, mode.first, mode.second);
+#endif
     }
 
     static void setEnabled(bool enabled)
@@ -59,9 +65,9 @@ class BOOST_EXTENSION_LOGGER_DECL Logger
     }
 
     static std::pair<LogCategory,LogLevel> getLogMode(LogCategory cat, LogLevel lvl)
-	{
+    {
     	return std::pair<LogCategory, LogLevel>(cat, lvl);
-	}
+    }
 
     bool isOutput(LogCategory cat, LogLevel lvl) const;
 
@@ -72,7 +78,7 @@ class BOOST_EXTENSION_LOGGER_DECL Logger
 
     Logger(bool enabled);
 
-    virtual void writeInternal(std::string Msg, LogCategory cat, LogLevel lvl);
+    virtual void writeInternal(std::string msg, LogCategory cat, LogLevel lvl);
     virtual void setEnabledInternal(bool enabled);
     virtual bool isEnabledInternal();
 

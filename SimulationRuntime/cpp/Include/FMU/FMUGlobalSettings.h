@@ -2,6 +2,12 @@
 #include <string.h>
 using std::string;
 
+#ifdef FMU_KINSOL
+  #define DEFAULT_NLS "kinsol"
+#else
+  #define DEFAULT_NLS "newton"
+#endif
+
 #include <Core/SimulationSettings/IGlobalSettings.h>
 
 class  FMUGlobalSettings : public IGlobalSettings
@@ -27,16 +33,16 @@ public:
     virtual bool getInfoOutput() { return false; }
     virtual void setInfoOutput(bool) {}
     virtual string    getOutputPath() { return "./"; }
-     virtual LogSettings getLogSettings() {return LogSettings();}
+    virtual LogSettings getLogSettings() {return LogSettings();}
     virtual void setLogSettings(LogSettings) {}
     virtual OutputPointType getOutputPointType() { return OPT_ALL; };
     virtual void setOutputPointType(OutputPointType) {};
     virtual void setOutputPath(string) {}
     virtual string    getSelectedSolver() { return "euler"; }
     virtual void setSelectedSolver(string) {}
-    virtual string    getSelectedLinSolver() { return "newton"; }
+    virtual string    getSelectedLinSolver() { return DEFAULT_NLS; }
     virtual void setSelectedLinSolver(string) {}
-    virtual string    getSelectedNonLinSolver() { return "newton"; }
+    virtual string    getSelectedNonLinSolver() { return DEFAULT_NLS; }
     virtual void setSelectedNonLinSolver(string) {}
     virtual void load(string xml_file) {};
     virtual void setResultsFileName(string) {}
@@ -45,5 +51,7 @@ public:
     virtual string getRuntimeLibrarypath() { return "";}
     virtual void setAlarmTime(unsigned int) {}
     virtual unsigned int getAlarmTime() {return 0;}
+    virtual void setNonLinearSolverContinueOnError(bool){};
+    virtual bool getNonLinearSolverContinueOnError(){ return false; };
 private:
 };

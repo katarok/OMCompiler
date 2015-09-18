@@ -62,7 +62,7 @@ static int rml_execution_failed()
 
 DLLExport int __omc_main(int argc, char **argv)
 {
-  MMC_INIT();
+  MMC_INIT(0);
   {
   void *lst = mmc_mk_nil();
   int i = 0;
@@ -951,7 +951,7 @@ case FUNCTION(__) then
 
   let &varDecls = buffer ""
   let &auxFunction = buffer ""
-  let bodyPart = (body |> stmt  => extractParFors(stmt, &varDecls, &auxFunction) ;separator="\n")
+  let bodyPart = extractParFors(body, &varDecls, &auxFunction)
   <<
   <%auxFunction%>
   <%bodyPart%>
@@ -972,10 +972,14 @@ case FUNCTION(__) then
   let &varInits = buffer ""
   let &varFrees = buffer ""
   let &auxFunction = buffer ""
+  let restoreJmpbuf = (if statementsContainReturn(body) then
+    (if statementsContainTryBlock(body) then
+      let &varDecls += 'jmp_buf *old_mmc_jumper = threadData->mmc_jumper;<%\n%>'
+      'threadData->mmc_jumper = old_mmc_jumper;<%\n%>'))
   let _ = (variableDeclarations |> var hasindex i1 fromindex 1 =>
       varInit(var, "", &varDecls, &varInits, &varFrees, &auxFunction) ; empty /* increase the counter! */
     )
-  let bodyPart = (body |> stmt  => funStatement(stmt, &varDecls, &auxFunction) ;separator="\n")
+  let bodyPart = funStatement(body, &varDecls, &auxFunction)
   let outVarAssign = (List.restOrEmpty(outVars) |> var => varOutput(var))
 
   let freeConstructedExternalObjects = (variableDeclarations |> var as VARIABLE(ty=T_COMPLEX(complexClassType=EXTERNAL_OBJ(path=path_ext))) => 'omc_<%underscorePath(path_ext)%>_destructor(threadData,<%contextCref(var.name,contextFunction,&auxFunction)%>);'; separator = "\n")
@@ -993,7 +997,7 @@ case FUNCTION(__) then
     <%varInits%>
     <%bodyPart%>
     _return: OMC_LABEL_UNUSED
-    <%outVarAssign%>
+    <%outVarAssign%><%restoreJmpbuf%>
     <%if acceptParModelicaGrammar() then
     '/* Free GPU/OpenCL CPU memory */<%\n%><%varFrees%>'%>
     <%freeConstructedExternalObjects%>
@@ -1037,7 +1041,7 @@ template generateInFunc(Text fname, list<Variable> functionArguments, list<Varia
   }
 
   int main(int argc, char **argv) {
-    MMC_INIT();
+    MMC_INIT(0);
     {
     void *lst = mmc_mk_nil();
     int i = 0;
@@ -1095,7 +1099,7 @@ case KERNEL_FUNCTION(__) then
       reconstructKernelArrays(var, &reconstrucedArrays)
     )
 
-  let bodyPart = (body |> stmt  => parModelicafunStatement(stmt, &varDecls, &auxFunction) ;separator="\n")
+  let bodyPart = parModelicafunStatement(body, &varDecls, &auxFunction)
 
   /* Needs to be done last as it messes with the tmp ticks :) */
   let &varDecls += addRootsTempArray()
@@ -1142,7 +1146,7 @@ case PARALLEL_FUNCTION(__) then
       varInitParallel(var, "", i1, &varDecls, &varInits, &varFrees, &auxFunction)
       ;empty
     )
-  let bodyPart = (body |> stmt  => parModelicafunStatement(stmt, &varDecls, &auxFunction) ;separator="\n")
+  let bodyPart = parModelicafunStatement(body, &varDecls, &auxFunction)
   let &outVarInits = buffer ""
   let &outVarCopy = buffer ""
   let &outVarAssign = buffer ""
@@ -1301,7 +1305,7 @@ case efn as EXTERNAL_FUNCTION(__) then
   let &varFrees = buffer ""
   let &outputAlloc = buffer ""
   let &auxFunction = buffer ""
-  let callPart = extFunCall(fn, &preExp, &varDecls, &auxFunction)
+  let callPart = extFunCall(fn, &preExp, &varDecls, &outputAlloc, &auxFunction)
   let _ = ( outVars |> var =>
             varInit(var, "", &varDecls, &outputAlloc, &varFrees, &auxFunction)
             ; empty /* increase the counter! */ )
@@ -1316,8 +1320,8 @@ case efn as EXTERNAL_FUNCTION(__) then
   {
     <%varDecls%>
     <%modelicaLine(info)%>
-    <%preExp%>
     <%outputAlloc%>
+    <%preExp%>
     <%callPart%>
     <%outVarAssign%>
     <%match outVars
@@ -1376,7 +1380,8 @@ template varInitRecord(Variable var, String prefix, Text &varDecls, Text &varIni
 match var
 case var as VARIABLE(parallelism = NON_PARALLEL(__)) then
   let varName = '<%prefix%>._<%crefToCStr(var.name)%>'
-  let &varInits += initRecordMembers(var, &auxFunction)
+  let initRecords = initRecordMembers(var, &varDecls, &varInits, &auxFunction)
+  let &varInits += initRecords
   let instDimsInit = (instDims |> exp =>
       daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)
     ;separator=", ")
@@ -1684,7 +1689,8 @@ case var as VARIABLE(parallelism = NON_PARALLEL(__)) then
                           else ''
   let &varDecls += if not outStruct then '<%typ%> <%varName%><%initVar%>;<%\n%>' //else ""
   let varName = contextCref(var.name,contextFunction,&auxFunction)
-  let &varInits += initRecordMembers(var, &auxFunction)
+  let initRecords = initRecordMembers(var, &varDecls, &varInits, &auxFunction)
+  let &varInits += initRecords
   let instDimsInit = (instDims |> exp =>
       daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)
     ;separator=", ")
@@ -1825,7 +1831,6 @@ else
   error(sourceInfo(), 'varInitParallel:error Unknown local variable type')
 end varInitParallel;
 
-
 template varAllocDefaultValue(Variable var, String outStruct, String lhsVarName, Text allocNoDefault, Text &varDecls, Text &varInits, Text &auxFunction)
 ::=
 match var
@@ -1840,7 +1845,7 @@ case var as VARIABLE(__) then
     let &preExp = buffer ""
     let params = (arr.array |> e hasindex i1 fromindex 1 =>
       let prefix = if arr.scalar then '(<%expTypeFromExpModelica(e)%>)' else '&'
-      '(*((<%rec_name%>*)generic_array_element_addr(&<%varName%>, sizeof(<%rec_name%>), 1, <%i1%>))) = <%prefix%><%daeExp(e, contextFunction, &preExp, &varDecls, &auxFunction)%>;'
+      '(*((<%rec_name%>*)generic_array_element_addr1(&<%varName%>, sizeof(<%rec_name%>), <%i1%>))) = <%prefix%><%daeExp(e, contextFunction, &preExp, &varDecls, &auxFunction)%>;'
     ;separator="\n")
     <<
     <%preExp%>
@@ -1894,6 +1899,7 @@ case var as VARIABLE(ty = T_STRING(__)) then
     else
       let &varAssign += 'How did you get here??'
       ""
+
 case var as VARIABLE(parallelism = PARGLOBAL(__)) then
   let instDimsInit = (instDims |> exp =>
       daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)
@@ -1903,9 +1909,9 @@ case var as VARIABLE(parallelism = PARGLOBAL(__)) then
     let &varAssign += 'copy_<%expTypeShort(var.ty)%>_array_data(<%contextCref(var.name,contextFunction, &auxFunction)%>, &<%dest%>.c<%ix%>);<%\n%>'
     ""
   else
-  let &varInits += '<%dest%>.c<%ix%> = ocl_device_alloc(sizeof(modelica_<%expTypeShort(var.ty)%>));<%\n%>'
-  let &varAssign += 'copy_assignment_helper_<%expTypeShort(var.ty)%>(&<%dest%>.c<%ix%>, &<%contextCref(var.name,contextFunction,&auxFunction)%>);<%\n%>'
-  ""
+    let &varInits += '<%dest%>.c<%ix%> = ocl_device_alloc(sizeof(modelica_<%expTypeShort(var.ty)%>));<%\n%>'
+    let &varAssign += 'copy_assignment_helper_<%expTypeShort(var.ty)%>(&<%dest%>.c<%ix%>, &<%contextCref(var.name,contextFunction,&auxFunction)%>);<%\n%>'
+    ""
 
 case var as VARIABLE(parallelism = PARLOCAL(__)) then
   let instDimsInit = (instDims |> exp =>
@@ -1916,9 +1922,9 @@ case var as VARIABLE(parallelism = PARLOCAL(__)) then
     let &varAssign += 'copy_<%expTypeShort(var.ty)%>_array_data(<%contextCref(var.name, contextFunction, &auxFunction)%>, &<%dest%>.c<%ix%>);<%\n%>'
     ""
   else
-  let &varInits += 'LOCAL HERE!! <%dest%>.c<%ix%> = ocl_device_alloc(sizeof(modelica_<%expTypeShort(var.ty)%>));<%\n%>'
-  let &varAssign += 'LOCAL HERE!! copy_assignment_helper_<%expTypeShort(var.ty)%>(&<%dest%>.c<%ix%>, &<%contextCref(var.name,contextFunction,&auxFunction)%>);<%\n%>'
-  ""
+    let &varInits += 'LOCAL HERE!! <%dest%>.c<%ix%> = ocl_device_alloc(sizeof(modelica_<%expTypeShort(var.ty)%>));<%\n%>'
+    let &varAssign += 'LOCAL HERE!! copy_assignment_helper_<%expTypeShort(var.ty)%>(&<%dest%>.c<%ix%>, &<%contextCref(var.name,contextFunction,&auxFunction)%>);<%\n%>'
+    ""
 
 case var as VARIABLE(__) then
   let instDimsInit = (instDims |> exp =>
@@ -1929,9 +1935,11 @@ case var as VARIABLE(__) then
     let &varAssign += 'copy_<%expTypeShort(var.ty)%>_array_data(<%contextCref(var.name,contextFunction,&auxFunction)%>, &<%dest%>.c<%ix%>);<%\n%>'
     ""
   else
-    let &varInits += initRecordMembers(var, &auxFunction)
+    let initRecords = initRecordMembers(var, &varDecls, &varInits, &auxFunction)
+    let &varInits += initRecords
     let &varAssign += '<%dest%>.c<%ix%> = <%contextCref(var.name,contextFunction,&auxFunction)%>;<%\n%>'
     ""
+
 case var as FUNCTION_PTR(__) then
     let &varAssign += '<%dest%>.c<%ix%> = (modelica_fnptr) _<%var.name%>;<%\n%>'
     ""
@@ -1949,8 +1957,7 @@ case var as VARIABLE(parallelism = PARGLOBAL(__)) then
       daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)
     ;separator=", ")
   if instDims then
-  let &varInits += 'alloc_<%expTypeShort(var.ty)%>_array(&<%varName%>, <%listLength(instDims)%>, <%instDimsInit%>);<%\n%>'
-
+    let &varInits += 'alloc_<%expTypeShort(var.ty)%>_array(&<%varName%>, <%listLength(instDims)%>, <%instDimsInit%>);<%\n%>'
     let &varAssign += '<%dest%>.c<%ix%> = <%contextCref(var.name,contextFunction,&auxFunction)%>;<%\n%>'
     ""
   else
@@ -1965,8 +1972,7 @@ case var as VARIABLE(parallelism = PARLOCAL(__)) then
       daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)
     ;separator=", ")
   if instDims then
-  let &varInits += 'alloc_<%expTypeShort(var.ty)%>_array(&<%varName%>, <%listLength(instDims)%>, <%instDimsInit%>);<%\n%>'
-
+    let &varInits += 'alloc_<%expTypeShort(var.ty)%>_array(&<%varName%>, <%listLength(instDims)%>, <%instDimsInit%>);<%\n%>'
     let &varAssign += '<%dest%>.c<%ix%> = <%contextCref(var.name,contextFunction,&auxFunction)%>;<%\n%>'
     ""
   else
@@ -1981,12 +1987,12 @@ case var as VARIABLE(__) then
       daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)
     ;separator=", ")
   if instDims then
-  let &varInits += 'alloc_<%expTypeShort(var.ty)%>_array(&<%varName%>, <%listLength(instDims)%>, <%instDimsInit%>);<%\n%>'
-
+    let &varInits += 'alloc_<%expTypeShort(var.ty)%>_array(&<%varName%>, <%listLength(instDims)%>, <%instDimsInit%>);<%\n%>'
     let &varAssign += '<%dest%>.c<%ix%> = <%contextCref(var.name,contextFunction,&auxFunction)%>;<%\n%>'
     ""
   else
-    let &varInits += initRecordMembers(var, &auxFunction)
+    let initRecords = initRecordMembers(var, &varDecls, &varInits, &auxFunction)
+    let &varInits += initRecords
     let &varAssign += '<%dest%>.c<%ix%> = <%contextCref(var.name,contextFunction,&auxFunction)%>;<%\n%>'
     ""
 case var as FUNCTION_PTR(__) then
@@ -1994,35 +2000,56 @@ case var as FUNCTION_PTR(__) then
     ""
 end varOutputKernelInterface;
 
-template initRecordMembers(Variable var, Text &auxFunction)
+template initRecordMembers(Variable var, Text &varDecls, Text &varInits, Text &auxFunction)
 ::=
 match var
 case VARIABLE(ty = T_COMPLEX(complexClassType = RECORD(__))) then
   let varName = contextCref(name,contextFunction,&auxFunction)
-  (ty.varLst |> v => recordMemberInit(v, varName) ;separator="\n")
+  (ty.varLst |> v => recordMemberInit(v, varName, &varDecls, &varInits, &auxFunction) ;separator="\n")
 end initRecordMembers;
 
-template recordMemberInit(Var v, Text varName)
+template recordMemberInit(Var v, Text varName, Text &varDecls, Text &varInits, Text &auxFunction)
 ::=
 match v
-case TYPES_VAR(ty = T_ARRAY(__)) then
-  let arrayType = expType(ty, true)
-  let dims = (ty.dims |> dim => dimension(dim) ;separator=", ")
-  'alloc_<%arrayType%>(&<%varName%>._<%name%>, <%listLength(ty.dims)%>, <%dims%>);'
+case TYPES_VAR(__) then
+   let vn = '<%varName%>._<%name%>'
+   let defaultArrayValue =
+      match ty
+         case ty as T_ARRAY(__) then
+          let arrayType = expType(ty, true)
+          let dims = (ty.dims |> dim => dimension(dim) ;separator=", ")
+        'alloc_<%arrayType%>(&<%vn%>, <%listLength(ty.dims)%>, <%dims%>);'
+     else
+      ''
+    end match
+  let defaultValue =
+    match binding
+    case VALBOUND(valBound = val) then
+      '<%vn%> = <%daeExp(valueExp(val), contextFunction, &varInits, &varDecls, &auxFunction)%>;'
+    case EQBOUND(evaluatedExp = SOME(val)) then
+      '<%vn%> = <%daeExp(valueExp(val), contextFunction, &varInits, &varDecls, &auxFunction)%>;'
+    case EQBOUND(exp = exp) then
+      '<%vn%> = <%daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)%>;'
+      else
+        '<%defaultArrayValue%>'
+    end match
+  <<
+  <%defaultValue%>
+  >>
 end recordMemberInit;
 
 template extVarName(ComponentRef cr)
 ::= '_<%crefToMStr(appendStringFirstIdent("_ext", cr))%>'
 end extVarName;
 
-template extFunCall(Function fun, Text &preExp, Text &varDecls, Text &auxFunction)
+template extFunCall(Function fun, Text &preExp, Text &varDecls, Text &varInit, Text &auxFunction)
  "Generates the call to an external function."
 ::=
 match fun
 case EXTERNAL_FUNCTION(__) then
   match language
   case "C" then extFunCallC(fun, &preExp, &varDecls, &auxFunction)
-  case "FORTRAN 77" then extFunCallF77(fun, &preExp, &varDecls, &auxFunction)
+  case "FORTRAN 77" then extFunCallF77(fun, &preExp, &varDecls, &varInit, &auxFunction)
 end extFunCall;
 
 template extFunCallC(Function fun, Text &preExp, Text &varDecls, Text &auxFunction)
@@ -2031,7 +2058,7 @@ template extFunCallC(Function fun, Text &preExp, Text &varDecls, Text &auxFuncti
 match fun
 case EXTERNAL_FUNCTION(__) then
   /* adpro: 2011-06-24 do vardecls -> extArgs as there might be some sets in there! */
-  let varDecs = (List.union(extArgs, extArgs) |> arg => extFunCallVardecl(arg, &varDecls, &auxFunction) ;separator="\n")
+  let &preExp += (List.union(extArgs, extArgs) |> arg => extFunCallVardecl(arg, &varDecls, &auxFunction) ;separator="\n")
   let _ = (biVars |> bivar => extFunCallBiVar(bivar, &preExp, &varDecls, &auxFunction) ;separator="\n")
   let fname = if dynamicLoad then 'ptr_<%extFunctionName(extName, language)%>' else '<%extName%>'
   let dynamicCheck = if dynamicLoad then
@@ -2049,7 +2076,6 @@ case EXTERNAL_FUNCTION(__) then
     else
       ""
   <<
-  <%varDecs%>
   <%match extReturn case SIMEXTARG(__) then extFunCallVardecl(extReturn, &varDecls, &auxFunction)%>
   <%dynamicCheck%>
   <%returnAssign%><%fname%>(<%args%>);
@@ -2058,7 +2084,7 @@ case EXTERNAL_FUNCTION(__) then
   >>
 end extFunCallC;
 
-template extFunCallF77(Function fun, Text &preExp, Text &varDecls, Text &auxFunction)
+template extFunCallF77(Function fun, Text &preExp, Text &varDecls, Text &varInit, Text &auxFunction)
  "Generates the call to an external Fortran 77 function."
 ::=
 match fun
@@ -2068,7 +2094,7 @@ case EXTERNAL_FUNCTION(__) then
   let varDecs = (List.union(extArgs, extArgs) |> arg => extFunCallVardeclF77(arg, &varDecls, &auxFunction) ;separator="\n")
   let &varDecls += '/* extFunCallF77: biVarDecs */<%\n%>'
   let &preExp += '/* extFunCallF77: biVarDecs */<%\n%>'
-  let biVarDecs = (biVars |> arg => extFunCallBiVarF77(arg, &preExp, &varDecls, &auxFunction) ;separator="\n")
+  let biVarDecs = (biVars |> arg => extFunCallBiVarF77(arg, &varInit, &varDecls, &auxFunction) ;separator="\n")
   let &varDecls += '/* extFunCallF77: args */<%\n%>'
   let &preExp += '/* extFunCallF77: args */<%\n%>'
   let args = (extArgs |> arg => extArgF77(arg, &preExp, &varDecls, &auxFunction) ;separator=", ")
@@ -2100,6 +2126,11 @@ template extFunCallVardecl(SimExtArg arg, Text &varDecls, Text &auxFunction)
     match expTypeShort(ty)
     case "integer" then
       'pack_integer_array(&<%contextCref(c,contextFunction,&auxFunction)%>);'
+    else ""
+  case SIMEXTARG(isInput = false, isArray = true, type_ = ty, cref = c) then
+    match expTypeShort(ty)
+    case "string" then
+      'fill_string_array(&<%contextCref(c,contextFunction,&auxFunction)%>, mmc_string_uninitialized);<%\n%>'
     else ""
   case SIMEXTARG(isInput=true, isArray=false, type_=ty, cref=c) then
     match ty
@@ -2152,12 +2183,16 @@ template extFunCallVardeclF77(SimExtArg arg, Text &varDecls, Text &auxFunction)
     ""
 end extFunCallVardeclF77;
 
+template boolStrC(Boolean v)
+::= if v then '1' else '0'
+end boolStrC;
+
 template typeDefaultValue(DAE.Type ty)
 ::=
   match ty
   case ty as T_INTEGER(__) then '0'
   case ty as T_REAL(__) then '0.0'
-  case ty as T_BOOL(__) then '0'
+  case ty as T_BOOL(__) then boolStrC(false)
   case ty as T_STRING(__) then '0' /* Always segfault is better than only sometimes segfault :) */
   else ""
 end typeDefaultValue;
@@ -2210,7 +2245,7 @@ case SIMEXTARG(outputIndex=oi, isArray=true, cref=c, type_=ty) then
   case "integer" then
   'unpack_integer_array(&<%contextCref(c,contextFunction,&auxFunction)%>);'
   case "string" then
-  'unpack_string_array(&<%contextCref(c,contextFunction,&auxFunction)%>);'
+  'unpack_string_array(&<%contextCref(c,contextFunction,&auxFunction)%>, <%contextCref(c,contextFunction,&auxFunction)%>_c89);'
   else ""
 case SIMEXTARG(outputIndex=oi, isArray=false, type_=ty, cref=c) then
     let cr = '<%extVarName(c)%>'
@@ -2247,7 +2282,9 @@ template extArg(SimExtArg extArg, Text &preExp, Text &varDecls, Text &auxFunctio
   case SIMEXTARG(cref=c, outputIndex=oi, isArray=true, type_=t) then
     let name = contextCref(c,contextFunction,&auxFunction)
     let shortTypeStr = expTypeShort(t)
-    '(<%extType(t,isInput,true)%>) data_of_<%shortTypeStr%>_c89_array(&(<%name%>))'
+    let &varDecls += 'void *<%name%>_c89;<%\n%>'
+    let &preExp += '<%name%>_c89 = (void*) data_of_<%shortTypeStr%>_c89_array(&(<%name%>));<%\n%>'
+    '(<%extType(t,isInput,true)%>) <%name%>_c89'
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=0, type_=t) then
     let cr = match t case T_STRING(__) then contextCref(c,contextFunction,&auxFunction) else extVarName(c)
     (match t case T_STRING(__) then 'MMC_STRINGDATA(<%cr%>)' else cr)
@@ -2305,43 +2342,25 @@ template tempSizeVarName(ComponentRef c, DAE.Exp indices, Text &auxFunction)
   else error(sourceInfo(), 'tempSizeVarName:UNHANDLED_EXPRESSION')
 end tempSizeVarName;
 
-template funStatement(Statement stmt, Text &varDecls, Text &auxFunction)
+template funStatement(list<DAE.Statement> statementLst, Text &varDecls, Text &auxFunction)
  "Generates function statements."
 ::=
-  match stmt
-  case ALGORITHM(__) then
-    (statementLst |> stmt =>
-      algStatement(stmt, contextFunction, &varDecls, &auxFunction)
-    ;separator="\n")
-  else
-    error(sourceInfo(), 'funStatement:NOT IMPLEMENTED FUN STATEMENT')
+  statementLst |> stmt => algStatement(stmt, contextFunction, &varDecls, &auxFunction) ; separator="\n"
 end funStatement;
 
-template parModelicafunStatement(Statement stmt, Text &varDecls, Text &auxFunction)
+template parModelicafunStatement(list<DAE.Statement> statementLst, Text &varDecls, Text &auxFunction)
  "Generates function statements With PARALLEL context. Similar to Function context.
  Except in some cases like assignments."
 ::=
-  match stmt
-  case ALGORITHM(__) then
-    (statementLst |> stmt =>
-      algStatement(stmt, contextParallelFunction, &varDecls, &auxFunction)
-    ;separator="\n")
-  else
-    error(sourceInfo(), 'parModelicafunStatement:NOT IMPLEMENTED FUN STATEMENT')
+  statementLst |> stmt => algStatement(stmt, contextParallelFunction, &varDecls, &auxFunction) ; separator="\n"
 end parModelicafunStatement;
 
-template extractParFors(Statement stmt, Text &varDecls, Text &auxFunction)
+template extractParFors(list<DAE.Statement> statementLst, Text &varDecls, Text &auxFunction)
  "Generates bodies of parfor loops to the kernel file.
  The sequential C operations needed to implement the parallel
  for loop will be handled by the normal funStatment template."
 ::=
-  match stmt
-  case ALGORITHM(__) then
-    (statementLst |> stmt =>
-      extractParFors_impl(stmt, contextParallelFunction, &varDecls, &auxFunction)
-    ;separator="\n")
-  else
-    error(sourceInfo(), 'extractParFors:NOT IMPLEMENTED FUN STATEMENT')
+  statementLst |> stmt => extractParFors_impl(stmt, contextParallelFunction, &varDecls, &auxFunction) ; separator="\n"
 end extractParFors;
 
 
@@ -2533,7 +2552,7 @@ match lhsexp
     '<%lhsStr%> = <%rhsExpStr%>;'
 
   /*This CALL on left hand side case shouldn't have been created by the compiler. It only comes because of alias eliminations. On top of that
-  at least it should have been a record_constractor not a normal call. sigh. */
+  at least it should have been a record_constructor not a normal call. sigh. */
   case CALL(path=path,expLst=expLst,attr=CALL_ATTR(ty=ty as T_COMPLEX(varLst = varLst, complexClassType=RECORD(__)))) then
     let tmp = tempDecl(expTypeModelica(ty),&varDecls)
     /*TODO handle array record memebers. see algStmtAssign*/
@@ -2541,14 +2560,11 @@ match lhsexp
     <%preExp%>
     <%tmp%> = <%rhsExpStr%>;
     <% varLst |> var as TYPES_VAR(__) hasindex i1 fromindex 1 =>
-      let re = daeExp(listGet(expLst,i1), context, &preExp, &varDecls, &auxFunction)
+      let re = daeExpCrefLhs(listGet(expLst,i1), context, &preExp, &varDecls, &auxFunction)
       '<%re%> = <%tmp%>._<%var.name%>;'
     ; separator="\n"
     %>
     >>
-  /*TODO check*/
-  case ARRAY(__) then
-    algStmtAssignArrWithRhsExpStr(lhsexp, rhsExpStr, context, &preExp, &varDecls, &auxFunction)
   else
     error(sourceInfo(), 'algStmtAssignWithRhsExpStr: Unhandled lhs expression. <%ExpressionDump.printExpStr(lhsexp)%>')
 end algStmtAssignWithRhsExpStr;
@@ -3056,8 +3072,10 @@ case STMT_TERMINATE(__) then
   let msgVar = daeExp(msg, context, &preExp, &varDecls, &auxFunction)
   <<
   <%preExp%>
-  FILE_INFO info = {<%infoArgs(getElementSourceFileInfo(source))%>};
-  omc_terminate(info, MMC_STRINGDATA(<%msgVar%>));
+  {
+    FILE_INFO info = {<%infoArgs(getElementSourceFileInfo(source))%>};
+    omc_terminate(info, MMC_STRINGDATA(<%msgVar%>));
+  }
   >>
 end algStmtTerminate;
 
@@ -3302,7 +3320,7 @@ template literalExpConst(Exp lit, Integer litindex, Text &preLit) "These should 
     >>
   case BOX(exp=exp as BCONST(__)) then
     <<
-    <%meta%> = MMC_IMMEDIATE(MMC_TAGFIXNUM(<%if exp.bool then 1 else 0%>));
+    <%meta%> = MMC_IMMEDIATE(MMC_TAGFIXNUM(<%boolStrC(exp.bool)%>));
     >>
   case BOX(exp=exp as RCONST(__)) then
     /* We need to use #define's to be C-compliant. Yea, total crap :) */
@@ -3353,7 +3371,7 @@ template literalExpConstBoxedVal(Exp lit, Text index, Text &preLit)
   match lit
   case ICONST(__) then 'MMC_IMMEDIATE(MMC_TAGFIXNUM(<%integer%>))'
   case ENUM_LITERAL(__) then 'MMC_IMMEDIATE(MMC_TAGFIXNUM(<%index%>))'
-  case lit as BCONST(__) then 'MMC_IMMEDIATE(MMC_TAGFIXNUM(<%if lit.bool then 1 else 0%>))'
+  case lit as BCONST(__) then 'MMC_IMMEDIATE(MMC_TAGFIXNUM(<%boolStrC(lit.bool)%>))'
   case lit as RCONST(__) then
     let &preLit +=
     <<
@@ -3378,12 +3396,13 @@ template literalExpConstArrayVal(Exp lit)
 ::=
   match lit
     case ICONST(__) then integer
-    case lit as BCONST(__) then if lit.bool then 1 else 0
+    case lit as BCONST(__) then boolStrC(lit.bool)
     case RCONST(__) then real
     case ENUM_LITERAL(__) then index
     case lit as SHARED_LITERAL(__) then '_OMC_LIT<%lit.index%>'
     else error(sourceInfo(), 'literalExpConstArrayVal failed: <%printExpStr(lit)%>')
 end literalExpConstArrayVal;
+
 
 template varType(Variable var)
  "Generates type for a variable."
@@ -3745,7 +3764,7 @@ template patternMatch(Pattern pat, Text rhs, Text onPatternFail, Text &varDecls,
         case c as SCONST(__) then
           let escstr = Util.escapeModelicaStringToCString(c.string)
           'if (<%unescapedStringLength(escstr)%> != MMC_STRLEN(<%urhs%>) || strcmp("<%escstr%>", MMC_STRINGDATA(<%urhs%>)) != 0) <%onPatternFail%>;<%\n%>'
-        case c as BCONST(__) then 'if (<%if c.bool then 1 else 0%> != <%urhs%>) <%onPatternFail%>;<%\n%>'
+        case c as BCONST(__) then 'if (<%boolStrC(c.bool)%> != <%urhs%>) <%onPatternFail%>;<%\n%>'
         case c as LIST(valList = {}) then 'if (!listEmpty(<%urhs%>)) <%onPatternFail%>;<%\n%>'
         case c as META_OPTION(exp = NONE()) then 'if (!optionNone(<%urhs%>)) <%onPatternFail%>;<%\n%>'
         case c as ENUM_LITERAL() then 'if (<%c.index%> != <%urhs%>) <%onPatternFail%>;<%\n%>'
@@ -3839,7 +3858,7 @@ template assertCommon(Exp condition, list<Exp> messages, Exp level, Context cont
   let msgVar = messages |> message => expToFormatString(message,context,&preExpMsg,&varDecls,&auxFunction) ; separator = ", "
   let eqnsindx = match context case FUNCTION_CONTEXT(__) then '' else 'equationIndexes, '
   let AddionalFuncName = match context case FUNCTION_CONTEXT(__) then '' else '_withEquationIndexes'
-  let addInfoTextContext = match context case FUNCTION_CONTEXT(__) then '' else '<%\n%>omc_assert_warning(info, "The following assertion has been violated at time %f\n<%Util.escapeModelicaStringToCString(printExpStr(condition))%>", time);'
+  let addInfoTextContext = match context case FUNCTION_CONTEXT(__) then '' else '<%\n%>omc_assert_warning(info, "The following assertion has been violated at time %f\n<%Util.escapeModelicaStringToCString(printExpStr(condition))%>", data->localData[0]->timeValue);'
   let omcAssertFunc = match level case ENUM_LITERAL(index=2) then 'omc_assert_warning<%AddionalFuncName%>(' else 'omc_assert<%AddionalFuncName%>(threadData, '
   let warningTriggered = tempDeclZero("static int", &varDecls)
   let TriggerIf = match level case ENUM_LITERAL(index=2) then 'if(!<%warningTriggered%>)<%\n%>' else ''
@@ -3851,8 +3870,10 @@ template assertCommon(Exp condition, list<Exp> messages, Exp level, Context cont
     if(!<%condVar%>)
     {
       <%preExpMsg%>
-      FILE_INFO info = {<%infoArgs(info)%>};<%addInfoTextContext%>
-      <%omcAssertFunc%>info, <%eqnsindx%><%msgVar%>);
+      {
+        FILE_INFO info = {<%infoArgs(info)%>};<%addInfoTextContext%>
+        <%omcAssertFunc%>info, <%eqnsindx%><%msgVar%>);
+      }
       <%TriggerVarSet%>
     }
   }<%\n%>
@@ -3881,9 +3902,11 @@ template assertCommonVar(Text condVar, Text msgVar, Context context, Text &preEx
     if(!<%condVar%>)
     {
         <%preExpMsg%>
-        FILE_INFO info = {<%infoArgs(info)%>};
-        omc_assert_warning(info, "The following assertion has been violated at time %f", time);
-        throwStreamPrintWithEquationIndexes(threadData, equationIndexes, <%msgVar%>);
+        {
+          FILE_INFO info = {<%infoArgs(info)%>};
+          omc_assert_warning(info, "The following assertion has been violated at time %f", data->localData[0]->timeValue);
+          throwStreamPrintWithEquationIndexes(threadData, equationIndexes, <%msgVar%>);
+        }
     }<%\n%>
     >>
 end assertCommonVar;
@@ -3925,7 +3948,7 @@ end contextIteratorName;
 ::=
   match cr
   case CREF_IDENT(ident = "xloc") then crefStr(cr)
-  case CREF_IDENT(ident = "time") then "time"
+  case CREF_IDENT(ident = "time") then "data->localData[0]->timeValue"
   case WILD(__) then ''
   else "$P" + crefToCStr(cr)
 end cref;
@@ -4055,6 +4078,7 @@ template tempDeclZero(String ty, Text &varDecls)
         let &varDecls += '<%ty%> <%newVarIx%> = 0;<%\n%>'
         newVarIx
   newVar
+
 end tempDeclZero;
 
 template tempDeclMatchInput(String ty, String prefix, String startIndex, String index, Text &varDecls)
@@ -4131,7 +4155,7 @@ end getTempDeclMatchOutputName;
   case e as ICONST(__)          then '(modelica_integer) <%integer%>' /* Yes, we need to cast int to long on 64-bit arch... */
   case e as RCONST(__)          then real
   case e as SCONST(__)          then daeExpSconst(string, &preExp, &varDecls)
-  case e as BCONST(__)          then if bool then "1" else "0"
+  case e as BCONST(__)          then boolStrC(bool)
   case e as ENUM_LITERAL(__)    then index
   case e as CREF(__)            then daeExpCrefRhs(e, context, &preExp, &varDecls, &auxFunction)
   case e as BINARY(__)          then daeExpBinary(e, context, &preExp, &varDecls, &auxFunction)
@@ -4482,7 +4506,7 @@ template daeExpCrefRhsFunContext(Exp ecr, Context context, Text &preExp,
                     >>
                   else
                     <<
-                    (*<%arrayType%>_element_addr(&<%arrName%>, <%dimsLenStr%>, <%dimsValuesStr%>))
+                    (*<%arrayType%>_element_addr<%match listLength(crefSubs(cr)) case 1 case 2 then dimsLenStr%>(&<%arrName%>, <%dimsLenStr%>, <%dimsValuesStr%>))
                     >>
               case PARALLEL_FUNCTION_CONTEXT(__) then
                 <<
@@ -4532,7 +4556,7 @@ template arrayScalarRhs(Type ty, list<Exp> subs, String arrName, Context context
           >>
         else
           <<
-          (*<%arrayType%>_element_addr(&<%arrName%>, <%dimsLenStr%>, <%dimsValuesStr%>))
+          (*<%arrayType%>_element_addr<%if intLt(listLength(subs), 3) then listLength(subs)%>(&<%arrName%>, <%dimsLenStr%>, <%dimsValuesStr%>))
           >>
 end arrayScalarRhs;
 
@@ -4620,7 +4644,7 @@ template daeExpCrefLhsFunContext(Exp ecr, Context context, Text &preExp,
                >>
            case FUNCTION_CONTEXT(__) then
                <<
-               (*<%arrayType%>_element_addr(&<%arrName%>, <%dimsLenStr%>, <%dimsValuesStr%>))
+               (*<%arrayType%>_element_addr<%if intLt(listLength(crefSubs(cr)),3) then dimsLenStr%>(&<%arrName%>, <%dimsLenStr%>, <%dimsValuesStr%>))
                >>
            else
              error(sourceInfo(),'This should have been handled in the new daeExpCrefLhsSimContext function. <%printExpStr(ecr)%>')
@@ -5379,7 +5403,7 @@ template daeExpCall(Exp call, Context context, Text &preExp, Text &varDecls, Tex
     let var1 = daeExp(e1, context, &preExp, &varDecls, &auxFunction)
     let var2 = daeExp(e2, context, &preExp, &varDecls, &auxFunction)
     let constIndex = daeExp(index, context, &preExp, &varDecls, &auxFunction)
-    '_event_div_<%expTypeShort(ty)%>(<%var1%>, <%var2%>, <%constIndex%>, data)'
+    '_event_div_<%expTypeShort(ty)%>(<%var1%>, <%var2%>, <%constIndex%>, data, threadData)'
 
   case CALL(path=IDENT(name="integer"), expLst={inExp,index}) then
     let exp = daeExp(inExp, context, &preExp, &varDecls, &auxFunction)
@@ -5556,7 +5580,7 @@ template daeExpCall(Exp call, Context context, Text &preExp, Text &varDecls, Tex
     let var1 = daeExp(e, context, &preExp, &varDecls, &auxFunction)
     let var2 = daeExp(d, context, &preExp, &varDecls, &auxFunction)
     let var3 = daeExp(delayMax, context, &preExp, &varDecls, &auxFunction)
-    let &preExp += '<%tvar%> = delayImpl(data, <%index%>, <%var1%>, time, <%var2%>, <%var3%>);<%\n%>'
+    let &preExp += '<%tvar%> = delayImpl(data, threadData, <%index%>, <%var1%>, data->localData[0]->timeValue, <%var2%>, <%var3%>);<%\n%>'
     '<%tvar%>'
 
   case CALL(path=IDENT(name="Integer"), expLst={toBeCasted}) then
@@ -5567,6 +5591,9 @@ template daeExpCall(Exp call, Context context, Text &preExp, Text &varDecls, Tex
     'mmc_clock()'
 
   case CALL(path=IDENT(name="noEvent"), expLst={e1}) then
+    daeExp(e1, context, &preExp, &varDecls, &auxFunction)
+
+  case CALL(path=IDENT(name="$getPart"), expLst={e1}) then
     daeExp(e1, context, &preExp, &varDecls, &auxFunction)
 
   case CALL(path=IDENT(name="sample"), expLst={ICONST(integer=index), _, _}) then
@@ -5733,7 +5760,7 @@ case ARRAY(array = array, scalar = scalar, ty = T_ARRAY(ty = t as T_COMPLEX(__))
   let &preExp += '<%\n%>alloc_generic_array(&<%arrayVar%>, sizeof(<%rec_name%>), 1, <%listLength(array)%>);<%\n%>'
   let params = (array |> e hasindex i1 fromindex 1 =>
       let prefix = if scalar then '(<%expTypeFromExpModelica(e)%>)' else '&'
-      '(*((<%rec_name%>*)generic_array_element_addr(&<%arrayVar%>, sizeof(<%rec_name%>), 1, <%i1%>))) = <%prefix%><%daeExp(e, context, &preExp, &varDecls, &auxFunction)%>;'
+      '(*((<%rec_name%>*)generic_array_element_addr1(&<%arrayVar%>, sizeof(<%rec_name%>), <%i1%>))) = <%prefix%><%daeExp(e, context, &preExp, &varDecls, &auxFunction)%>;'
       ;separator="\n")
   let &preExp += '<%params%><%\n%>'
   arrayVar
@@ -6099,7 +6126,7 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
       match typeof(r.expr)
         case T_COMPLEX(complexClassType = record_state) then
           let rec_name = '<%underscorePath(ClassInf.getStateName(record_state))%>'
-          '*((<%rec_name%>*)generic_array_element_addr(&<%res%>, sizeof(<%rec_name%>), 1, <%arrIndex%>++)) = <%reductionBodyExpr%>;'
+          '*((<%rec_name%>*)generic_array_element_addr1(&<%res%>, sizeof(<%rec_name%>), <%arrIndex%>++)) = <%reductionBodyExpr%>;'
         case T_ARRAY(__) then
           let tmp = tempDecl("index_spec_t", &varDecls)
           let nridx_str = intAdd(1,listLength(dims))
@@ -6172,7 +6199,7 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
       let addr = match iter.ty
         case T_ARRAY(ty=T_COMPLEX(complexClassType = record_state)) then
           let rec_name = '<%underscorePath(ClassInf.getStateName(record_state))%>'
-          '*((<%rec_name%>*)generic_array_element_addr(&<%loopVar%>, sizeof(<%rec_name%>), 1, <%firstIndex%>++))'
+          '*((<%rec_name%>*)generic_array_element_addr1(&<%loopVar%>, sizeof(<%rec_name%>), <%firstIndex%>++))'
         else
           '*(<%arrayType%>_element_addr1(&<%loopVar%>, 1, <%firstIndex%>++))'
       <<

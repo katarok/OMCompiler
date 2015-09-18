@@ -535,7 +535,7 @@ protected
 algorithm
   DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(path)) := ty;
   name := Absyn.pathStringUnquoteReplaceDot(path, "_");
-  decl := List.selectFirst1(allDecls, isRecordDecl, name);
+  decl := List.find1(allDecls, isRecordDecl, name);
 end getRecordDependenciesFromType;
 
 protected function isRecordDecl
@@ -673,7 +673,7 @@ algorithm
       DAE.ExternalDecl extdecl;
       list<SimCode.Variable> outVars, inVars, biVars, funArgs, varDecls;
       list<SimCode.RecordDeclaration> recordDecls;
-      list<SimCode.Statement> bodyStmts;
+      list<DAE.Statement> bodyStmts;
       list<DAE.Element> daeElts;
       Absyn.Path name;
       DAE.ElementSource source;
@@ -699,8 +699,7 @@ algorithm
         (recordDecls, rt_1) = elaborateRecordDeclarations(daeElts, recordDecls, rt);
         vars = List.filter(daeElts, isVarQ);
         varDecls = List.map(vars, daeInOutSimVar);
-        algs = List.filterOnTrue(daeElts, DAEUtil.isAlgorithm);
-        bodyStmts = List.map(algs, elaborateStatement);
+        bodyStmts = listAppend(elaborateStatement(e) for e guard DAEUtil.isAlgorithm(e) in daeElts);
         info = DAEUtil.getElementSourceFileInfo(source);
       then
         (SimCode.FUNCTION(fpath, outVars, funArgs, varDecls, bodyStmts, visibility, info), rt_1, recordDecls, includes, includeDirs, libs,libPaths);
@@ -719,8 +718,7 @@ algorithm
         (recordDecls, rt_1) = elaborateRecordDeclarations(daeElts, recordDecls, rt);
         vars = List.filter(daeElts, isVarNotInputNotOutput);
         varDecls = List.map(vars, daeInOutSimVar);
-        algs = List.filterOnTrue(daeElts, DAEUtil.isAlgorithm);
-        bodyStmts = List.map(algs, elaborateStatement);
+        bodyStmts = listAppend(elaborateStatement(e) for e guard DAEUtil.isAlgorithm(e) in daeElts);
         info = DAEUtil.getElementSourceFileInfo(source);
       then
         (SimCode.KERNEL_FUNCTION(fpath, outVars, funArgs, varDecls, bodyStmts, info), rt_1, recordDecls, includes, includeDirs, libs,libPaths);
@@ -739,8 +737,7 @@ algorithm
         (recordDecls, rt_1) = elaborateRecordDeclarations(daeElts, recordDecls, rt);
         vars = List.filter(daeElts, isVarQ);
         varDecls = List.map(vars, daeInOutSimVar);
-        algs = List.filterOnTrue(daeElts, DAEUtil.isAlgorithm);
-        bodyStmts = List.map(algs, elaborateStatement);
+        bodyStmts = listAppend(elaborateStatement(e) for e guard DAEUtil.isAlgorithm(e) in daeElts);
         info = DAEUtil.getElementSourceFileInfo(source);
       then
         (SimCode.PARALLEL_FUNCTION(fpath, outVars, funArgs, varDecls, bodyStmts, info), rt_1, recordDecls, includes, includeDirs, libs,libPaths);
@@ -1012,22 +1009,9 @@ end findIndexInList;
 
 protected function elaborateStatement
   input DAE.Element inElement;
-  output SimCode.Statement outStatement;
+  output list<DAE.Statement> stmts;
 algorithm
-  (outStatement):=
-  matchcontinue (inElement)
-    local
-      list<DAE.Statement> stmts;
-    case (DAE.ALGORITHM(algorithm_ = DAE.ALGORITHM_STMTS(statementLst = stmts)))
-    then
-      SimCode.ALGORITHM(stmts);
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("# SimCode.elaborateStatement failed\n");
-      then
-        fail();
-  end matchcontinue;
+  DAE.ALGORITHM(algorithm_ = DAE.ALGORITHM_STMTS(statementLst = stmts)) := inElement;
 end elaborateStatement;
 
 
@@ -1042,11 +1026,11 @@ algorithm
       list<SimCode.Variable> inVars;
     case (_, SimCode.FUNCTION(functionArguments = inVars))
       equation
-        failure(_ = List.selectFirst(inVars, isFunctionPtr));
+        failure(_ = List.find(inVars, isFunctionPtr));
       then ();
     case (_, SimCode.EXTERNAL_FUNCTION(inVars = inVars))
       equation
-        failure(_ = List.selectFirst(inVars, isFunctionPtr));
+        failure(_ = List.find(inVars, isFunctionPtr));
       then ();
     else
       equation

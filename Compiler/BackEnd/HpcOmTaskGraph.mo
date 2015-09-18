@@ -163,9 +163,11 @@ protected
   tuple<TaskGraph,TaskGraphMeta,Integer> tplOut;
 
   BackendDAE.EqSystem syst;
+  BackendDAE.Matching matching;
   BackendDAE.IncidenceMatrix incidenceMatrix;
 algorithm
-  BackendDAE.EQSYSTEM(matching=BackendDAE.MATCHING(comps=comps), orderedVars=vars, orderedEqs=BackendDAE.EQUATION_ARRAY(numberOfElement=numberOfEqs)) := iSyst;
+  BackendDAE.EQSYSTEM(matching=matching, orderedVars=vars, orderedEqs=BackendDAE.EQUATION_ARRAY(numberOfElement=numberOfEqs)) := iSyst;
+  comps := BackendDAEUtil.getCompsOfMatching(matching);
   BackendDAE.SHARED(functionTree=sharedFuncs) := iShared;
   (iGraph,iGraphData,eqSysIdx) := iGraphInfo;
 
@@ -212,21 +214,23 @@ protected function getSystemComponents0 "author: marcusw
   output tuple<BackendDAE.StrongComponents, list<tuple<BackendDAE.EqSystem,Integer>>, Integer> oSystMapping; //Map each component to <eqSystem, eqSystemIdx>
 protected
   BackendDAE.StrongComponents tmpComps, comps;
+  BackendDAE.Matching matching;
   list<tuple<BackendDAE.EqSystem,Integer>> tmpSystMapping;
   Integer currentIdx;
 algorithm
   oSystMapping := match(iSyst, iSystMapping)
-    case(BackendDAE.EQSYSTEM(matching=BackendDAE.MATCHING(comps=comps)), (tmpComps,tmpSystMapping,currentIdx))
+    case(BackendDAE.EQSYSTEM(matching=matching), (tmpComps,tmpSystMapping,currentIdx))
       equation
+        comps = BackendDAEUtil.getCompsOfMatching(matching);
         //print("--getSystemComponents0 begin\n");
         tmpSystMapping = List.fold2(comps, getSystemComponents1, iSyst, currentIdx, tmpSystMapping);
         //print(stringDelimitList(List.map(comps, BackendDump.printComponent),","));
         tmpComps = listAppend(tmpComps,comps);
-        //print("--getSystemComponents0 end (found " + intString(listLength(comps)) + " of " + intString(numberOfElement) + " components)\n");
+        //print("--getSystemComponents0 end (found " + intString(listLength(comps)) + " components in system " + intString(currentIdx) + ")\n");
       then ((tmpComps, tmpSystMapping, currentIdx+1));
     else
       equation
-        print("getSystemComponents0 failed");
+        print("getSystemComponents0 failed\n");
       then fail();
   end match;
 end getSystemComponents0;
@@ -260,8 +264,10 @@ public function getNumberOfEqSystemComponents "author: marcusw
   output Integer oNumOfComps;
 protected
   BackendDAE.StrongComponents comps;
+  BackendDAE.Matching matching;
 algorithm
-  BackendDAE.EQSYSTEM(matching=BackendDAE.MATCHING(comps=comps)) := iEqSystem;
+  BackendDAE.EQSYSTEM(matching=matching) := iEqSystem;
+  comps := BackendDAEUtil.getCompsOfMatching(matching);
   oNumOfComps := iNumOfComps + listLength(comps);
 end getNumberOfEqSystemComponents;
 
@@ -791,12 +797,14 @@ author: Waurich TUD 2013-06"
   output tuple<list<Integer>,Integer> eventInfoOut;
 protected
   BackendDAE.StrongComponents comps;
+  BackendDAE.Matching matching;
   list<Integer> eventEqs;
   list<Integer> eventEqsIn;
   Integer numOfEqs;
   Integer offset;
 algorithm
-  BackendDAE.EQSYSTEM(orderedEqs = BackendDAE.EQUATION_ARRAY(numberOfElement=numOfEqs),matching=BackendDAE.MATCHING(comps = comps)) := systIn;
+  BackendDAE.EQSYSTEM(orderedEqs = BackendDAE.EQUATION_ARRAY(numberOfElement=numOfEqs),matching=matching) := systIn;
+  comps := BackendDAEUtil.getCompsOfMatching(matching);
   (eventEqsIn,offset) := eventInfoIn;
   eventEqs := getEventNodeEqs1(comps,offset,{});
   offset := offset+numOfEqs;
@@ -2526,12 +2534,14 @@ protected function getDiscreteNodesEqs
 protected
   BackendDAE.StrongComponents comps;
   BackendDAE.Variables orderedVars;
+  BackendDAE.Matching matching;
   list<Integer> eventEqs;
   list<Integer> eventEqsIn;
   Integer numOfEqs;
   Integer offset;
 algorithm
-  BackendDAE.EQSYSTEM(orderedEqs = BackendDAE.EQUATION_ARRAY(numberOfElement=numOfEqs),orderedVars=orderedVars,matching=BackendDAE.MATCHING(comps = comps)) := systIn;
+  BackendDAE.EQSYSTEM(orderedEqs = BackendDAE.EQUATION_ARRAY(numberOfElement=numOfEqs),orderedVars=orderedVars,matching=matching) := systIn;
+  comps := BackendDAEUtil.getCompsOfMatching(matching);
   (eventEqsIn,offset) := eventInfoIn;
   eventEqs := getDiscreteNodesEqs1(comps,offset,orderedVars,{});
   offset := offset+numOfEqs;
@@ -3122,7 +3132,7 @@ algorithm
 end printInComps;
 
 public function printVarCompMapping " prints the information about how the vars are assigned to the graph nodes
-author: Waurich TUD 2013-07 / mwalther"
+author: Waurich TUD 2013-07 / marcusw"
   input array<tuple<Integer, Integer, Integer>> iVarCompMapping;
 protected
   Integer varIdx, comp, eqSysIdx, varOffset;
@@ -3135,7 +3145,7 @@ algorithm
 end printVarCompMapping;
 
 public function printEqCompMapping " prints the information about which equations are assigned to the graph nodes
-author: Waurich TUD 2013-07 / mwalther"
+author: Waurich TUD 2013-07 / marcusw"
   input array<tuple<Integer,Integer,Integer>> iEqCompMapping;
 protected
   Integer eqIdx, comp, eqSysIdx, eqOffset;
@@ -3162,7 +3172,7 @@ algorithm
 end printCompParamMapping;
 
 protected function printComponentNames "prints the component names of the taskgraph components
-author: Waurich TUD 2013-07 / mwalther"
+author: Waurich TUD 2013-07 / marcusw"
   input array<String> iCompNames;
 protected
   Integer compIdx;
@@ -3176,7 +3186,7 @@ algorithm
 end printComponentNames;
 
 protected function printCompDescs "prints the information about the description of the taskgraph nodes for the .graphml file.
-author: Waurich TUD 2013-07 / mwalther"
+author: Waurich TUD 2013-07 / marcusw"
   input array<String> iCompDescs;
 protected
   Integer compIdx;
@@ -3190,7 +3200,7 @@ algorithm
 end printCompDescs;
 
 protected function printExeCosts " prints the information about the execution costs of every component in task graph meta
-author: Waurich TUD 2013-07 / mwalther"
+author: Waurich TUD 2013-07 / marcusw"
   input array<tuple<Integer,Real>> iExeCosts;
 protected
   Integer compIdx;
@@ -3205,7 +3215,7 @@ algorithm
 end printExeCosts;
 
 protected function printCommCosts " prints the information about the the communication costs of every edge.
-author:Waurich TUD 2013-06 / mwalther"
+author:Waurich TUD 2013-06 / marcusw"
   input array<Communications> iCommCosts;
 protected
   Integer nodeIdx;
@@ -3235,7 +3245,7 @@ algorithm
 end printCommCost;
 
 public function printNodeMarks " prints the information about additional NodeMark
-author: Waurich TUD 2013-07 / mwalther"
+author: Waurich TUD 2013-07 / marcusw"
   input array<Integer> iNodeMarks;
 protected
   Integer compIdx, mark;
@@ -3248,7 +3258,7 @@ algorithm
 end printNodeMarks;
 
 public function printComponentInformations "function to print the component informations of task graph meta
-  author:mwalther"
+  author:marcusw"
   input array<ComponentInfo> iComponentInformations;
 protected
   Integer compIdx;
@@ -3334,7 +3344,6 @@ algorithm
   end matchcontinue;
 end printCriticalPathInfo;
 
-
 protected function printCriticalPathInfo1"prints one criticalPath.
 author: Waurich TUD 2013-07"
   input list<list<Integer>> criticalPathsIn;
@@ -3342,7 +3351,6 @@ author: Waurich TUD 2013-07"
 algorithm
   print(intString(cpIdx)+". path: "+intLstString(listGet(criticalPathsIn,cpIdx))+"\n");
 end printCriticalPathInfo1;
-
 
 //--------------------------
 //  Functions to merge nodes
@@ -4997,6 +5005,8 @@ algorithm
         (systComps,systCompEqSysMapping) = getSystemComponents(iDae);
         systCompsArray = listArray(systComps);
         (graphComps,graphCompEqSysMapping) = getGraphComponents(iMeta,systCompsArray,systCompEqSysMapping);
+        //print("validateTaskGraphMeta: graph components are " + stringDelimitList(List.map(graphComps, BackendDump.printComponent), ",") + "\n");
+        //print("validateTaskGraphMeta: system components are " + stringDelimitList(List.map(systComps, BackendDump.printComponent), ",") + "\n");
         ((_,_,systCompEqSysMappingIdx)) = validateTaskGraphMeta0(systCompEqSysMapping,(1,systComps,{}));
         ((_,_,graphCompEqSysMappingIdx)) = validateTaskGraphMeta0(graphCompEqSysMapping,(1,graphComps,{}));
         true = validateComponents(graphCompEqSysMappingIdx,systCompEqSysMappingIdx);
@@ -5010,7 +5020,7 @@ algorithm
   end matchcontinue;
 end validateTaskGraphMeta;
 
-public function validateTaskGraphMeta0 "author: marcusw
+protected function validateTaskGraphMeta0 "author: marcusw
   Implementation of validateTaskGraphMeta."
   input array<tuple<BackendDAE.EqSystem,Integer>> iEqSysMapping;
   input tuple<Integer,BackendDAE.StrongComponents,list<tuple<BackendDAE.StrongComponent,Integer>>> iCompsTpl; //<current Index, list of remaining strong components, result>
@@ -5027,6 +5037,7 @@ algorithm
       equation
         ((_,eqSysIdx)) = arrayGet(iEqSysMapping,currentIdx);
         oCompEqSysMapping = (head,eqSysIdx)::iCompEqSysMapping;
+        //print("validateTaskGraphMeta0: Adding head " + BackendDump.printComponent(head) + " with equation system index " + intString(eqSysIdx) + "\n");
         tmpCompsTpl = validateTaskGraphMeta0(iEqSysMapping,(currentIdx+1,rest,oCompEqSysMapping));
       then tmpCompsTpl;
     else iCompsTpl;
@@ -5050,7 +5061,10 @@ algorithm
       algorithm
         sortedGraphComps := List.sort(graphComps,compareComponents);
         sortedSystComps := List.sort(systComps,compareComponents);
-        //true := List.isEqual(sortedGraphComps, sortedSystComps, true);
+
+        //print("validateTaskGraphMeta: sorted graph components are \n" + stringDelimitList(List.map(List.map(sortedGraphComps, Util.tuple21), BackendDump.printComponent), ",") + "\n");
+        //print("validateTaskGraphMeta: sorted system components are \n" + stringDelimitList(List.map(List.map(sortedSystComps, Util.tuple21), BackendDump.printComponent), ",") + "\n");
+
         if intNe(listLength(sortedSystComps),listLength(sortedGraphComps)) then print("the graph and the system have a difference number of components.\n"); end if;
         isEqual := true;
         while isEqual and not listEmpty(sortedGraphComps) loop
@@ -5058,10 +5072,10 @@ algorithm
           tpl2::sortedSystComps := sortedSystComps;
           (comp1,i1) := tpl1;
           (comp2,i2) := tpl2;
-          if BackendDAEUtil.componentsEqual(comp1,comp2) and intEq(i1,i2) then isEqual:= true;
+          if componentsEqual(tpl1, tpl2) then isEqual:= true;
           else
             isEqual := false;
-            print("comp"+intString(i1)+BackendDump.printComponent(comp1)+" is not equal to "+"comp"+intString(i2)+BackendDump.printComponent(comp2)+"\n");
+            print("comp " + intString(i1) + BackendDump.printComponent(comp1) + " is not equal to " + "comp" + intString(i2) + BackendDump.printComponent(comp2) + "\n");
           end if;
         end while;
       then true;
@@ -5099,8 +5113,8 @@ algorithm
     case(_,(_,NONE())) then ((true,SOME(currentComp_idx)));
     case((currentComp,idxCurrent),(_,SOME(lastComp_idx as (lastComp, idxLast))))
       equation
-        false = compareComponents(currentComp_idx,lastComp_idx);
-        print("Component duplicate detected in eqSystem " + intString(idxCurrent) + ": current: " + BackendDump.printComponent(currentComp) + " last " + BackendDump.printComponent(lastComp) + ".\n");
+        true = componentsEqual(currentComp_idx,lastComp_idx);
+        print("Component duplicate detected: current: " + BackendDump.printComponent(currentComp) + " (eqSystem " + intString(idxCurrent) + ") last " + BackendDump.printComponent(lastComp) + " (eqSystem " + intString(idxLast) + ").\n");
       then ((false,SOME(currentComp_idx)));
     else ((true, SOME(currentComp_idx)));
   end matchcontinue;
@@ -5199,24 +5213,53 @@ algorithm
   end matchcontinue;
 end getGraphComponents2;
 
-protected function compareComponents "author: marcusw
-  Compares the given components and returns false if they are equal."
+protected function componentsEqual "author: marcusw
+  Compares the given components and returns true if they are equal."
   input tuple<BackendDAE.StrongComponent,Integer> iComp1;
   input tuple<BackendDAE.StrongComponent,Integer> iComp2; //<component, eqSystIdx>
   output Boolean res;
 protected
   String comp1Str,comp2Str;
-  Integer minLength, comp1Idx, comp2Idx;
+  Integer comp1Idx, comp2Idx;
   BackendDAE.StrongComponent comp1, comp2;
 algorithm
   (comp1, comp1Idx) := iComp1;
   (comp2, comp2Idx) := iComp2;
   comp1Str := BackendDump.printComponent(comp1) + "_" + intString(comp1Idx);
   comp2Str := BackendDump.printComponent(comp2) + "_" + intString(comp2Idx);
-  minLength := intMin(stringLength(comp1Str),stringLength(comp2Str));
-  res := intGt(System.strncmp(comp1Str, comp2Str, minLength), 0);
-end compareComponents;
+  if(intNe(stringLength(comp1Str),stringLength(comp2Str))) then
+    res := false;
+  else
+    res := intEq(System.strncmp(comp1Str, comp2Str, stringLength(comp1Str)), 0);
+  end if;
+end componentsEqual;
 
+protected function compareComponents "author: marcusw
+  Compares the given components and returns true if the name of the first component is lower are equal."
+  input tuple<BackendDAE.StrongComponent,Integer> iComp1;
+  input tuple<BackendDAE.StrongComponent,Integer> iComp2; //<component, eqSystIdx>
+  output Boolean res;
+protected
+  String comp1Str,comp2Str;
+  Integer minLength, compRes, comp1Idx, comp2Idx;
+  BackendDAE.StrongComponent comp1, comp2;
+algorithm
+  if(componentsEqual(iComp1, iComp2)) then
+    res := false;
+  else
+    (comp1, comp1Idx) := iComp1;
+    (comp2, comp2Idx) := iComp2;
+    comp1Str := BackendDump.printComponent(comp1) + "_" + intString(comp1Idx);
+    comp2Str := BackendDump.printComponent(comp2) + "_" + intString(comp2Idx);
+    minLength := intMin(stringLength(comp1Str), stringLength(comp2Str));
+    compRes := System.strncmp(comp1Str, comp2Str, minLength);
+    if(intEq(compRes, 0)) then
+      res := intLt(stringLength(comp1Str), stringLength(comp2Str));
+    else
+      res := intLt(compRes, 0);
+    end if;
+  end if;
+end compareComponents;
 
 //------------------------------------
 //  Evaluation and analysing functions
@@ -6234,14 +6277,21 @@ algorithm
     local
       Integer offset,eqSys,node;
       Boolean eqSysNeq;
-  case(_,_,_,_)
-    equation
-      ((node,eqSys,offset)) = arrayGet(varCompMapping,tryThisIndex);
-      eqSysNeq = intNe(eqSys,eqSysIdx);
-      node = if eqSysNeq then getNodeForVarIdx(varIdx,eqSysIdx,varCompMapping,tryThisIndex+offset) else node;
-    then node;
-  case(-1,-1,_,_)
-    then -1;
+    case(_,_,_,_)
+      equation
+        ((node,eqSys,offset)) = arrayGet(varCompMapping,tryThisIndex);
+        eqSysNeq = intNe(eqSys,eqSysIdx);
+        if(intEq(offset, 0)) then
+          offset = 1;
+        end if;
+        node = if eqSysNeq then getNodeForVarIdx(varIdx,eqSysIdx,varCompMapping,tryThisIndex+offset) else node;
+      then node;
+    case(-1,-1,_,_)
+      then -1;
+    else
+      equation
+        print("HpcOmTaskGraph.getNodeForVarIdx failed\n");
+      then -1;
   end matchcontinue;
 end getNodeForVarIdx;
 

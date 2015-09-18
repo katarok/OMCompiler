@@ -343,6 +343,16 @@ template equationIndex(SimEqSystem eq)
     then index
 end equationIndex;
 
+template equationIndexAlternativeTearing(SimEqSystem eq)
+ "Generates an equation."
+::=
+  match eq
+  case SES_LINEAR(alternativeTearing=SOME(at as LINEARSYSTEM(__)))
+    then at.index
+  case SES_NONLINEAR(alternativeTearing=SOME(at as NONLINEARSYSTEM(__)))
+    then at.index
+end equationIndexAlternativeTearing;
+
 template dumpEqs(list<SimEqSystem> eqs)
 ::= eqs |> eq hasindex i0 =>
   match eq
@@ -431,12 +441,13 @@ template dumpEqs(list<SimEqSystem> eqs)
       </mixed>
       >>
     case e as SES_WHEN(__) then
+      let body = dumpWhenOps(whenStmtLst)
       <<
       equation index: <%equationIndex(eq)%>
       type: WHEN
 
       when {<%conditions |> cond => '<%crefStr(cond)%>' ; separator=", " %>} then
-        <%crefStr(e.left)%> = <%escapeCComments(printExpStr(e.right))%>;
+        <%body%>
       end when;
       >>
     case e as SES_IFEQUATION(__) then
@@ -466,6 +477,90 @@ template dumpEqs(list<SimEqSystem> eqs)
       unknown equation
       >>
 end dumpEqs;
+
+template dumpWhenOps(list<BackendDAE.WhenOperator> whenOps)
+::=
+  match whenOps
+  case ({}) then <<>>
+  case ((e as BackendDAE.ASSIGN(__))::rest) then
+    let restbody = dumpWhenOps(rest)
+    <<
+    <%crefStr(e.left)%> = <%escapeCComments(printExpStr(e.right))%>;
+    <%restbody%>
+    >>
+  case ((e as BackendDAE.REINIT(__))::rest) then
+    let restbody = dumpWhenOps(rest)
+    <<
+    reinit(<%crefStr(e.stateVar)%>,  <%escapeCComments(printExpStr(e.value))%>);
+    <%restbody%>
+    >>
+  case ((e as BackendDAE.ASSERT(__))::rest) then
+    let restbody = dumpWhenOps(rest)
+    <<
+    assert(<%escapeCComments(printExpStr(e.condition))%>, <%escapeCComments(printExpStr(e.message))%>, <%escapeCComments(printExpStr(e.level))%>);
+    <%restbody%>
+    >>
+  case ((e as BackendDAE.TERMINATE(__))::rest) then
+    let restbody = dumpWhenOps(rest)
+    <<
+    terminate(<%escapeCComments(printExpStr(e.message))%>)%>);
+    <%restbody%>
+    >>
+  case ((e as BackendDAE.NORETCALL(__))::rest) then
+    let restbody = dumpWhenOps(rest)
+    <<
+    noReturnCall(<%escapeCComments(printExpStr(e.exp))%>)%>);
+    <%restbody%>
+    >>
+  else error(sourceInfo(),"dumpEqs: Unknown equation")
+end dumpWhenOps;
+
+template dumpEqsAlternativeTearing(list<SimEqSystem> eqs)
+::= eqs |> eq hasindex i0 =>
+  match eq
+    case e as SES_LINEAR(alternativeTearing=SOME(at as LINEARSYSTEM(__))) then
+      <<
+      equation index: <%equationIndexAlternativeTearing(eq)%>
+      type: LINEAR
+
+      <%at.vars |> SIMVAR(name=cr) => '<var><%crefStr(cr)%></var>' ; separator = "\n" %>
+      <row>
+        <%at.beqs |> exp => '<cell><%escapeCComments(printExpStr(exp))%></cell>' ; separator = "\n" %><%\n%>
+      </row>
+      <matrix>
+        <%at.simJac |> (i1,i2,eq) =>
+        <<
+        <cell row="<%i1%>" col="<%i2%>">
+          <%match eq case e as SES_RESIDUAL(__) then
+            <<
+            <residual><%escapeCComments(printExpStr(e.exp))%></residual>
+            >>
+           %>
+        </cell>
+        >>
+        %>
+      </matrix>
+
+      This is the alternative tearing set with casual solvability rules.
+      If it fails, this function will call the strict tearing set.
+      >>
+    case e as SES_NONLINEAR(alternativeTearing=SOME(at as NONLINEARSYSTEM(__))) then
+      <<
+      equation index: <%equationIndexAlternativeTearing(eq)%>
+      indexNonlinear: <%at.indexNonLinearSystem%>
+      type: NONLINEAR
+
+      vars: {<%at.crefs |> cr => '<%crefStr(cr)%>' ; separator = ", "%>}
+      eqns: {<%at.eqs |> eq => '<%equationIndex(eq)%>' ; separator = ", "%>}
+
+      This is the alternative tearing set with casual solvability rules.
+      If it fails, this function will call the strict tearing set.
+      >>
+    else
+      <<
+      unknown equation
+      >>
+end dumpEqsAlternativeTearing;
 
 
 /************************************************************************************************/

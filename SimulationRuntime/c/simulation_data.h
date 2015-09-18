@@ -41,6 +41,7 @@
 #include "util/ringbuffer.h"
 #include "util/omc_error.h"
 #include "util/rtclock.h"
+#include "util/rational.h"
 
 #define omc_dummyVarInfo {-1,"","",omc_dummyFileInfo}
 #define omc_dummyEquationInfo {-1,0,"",-1,NULL}
@@ -291,12 +292,13 @@ typedef struct NONLINEAR_SYSTEM_DATA
    *
    * if analyticalJacobianColumn == NULL no analyticalJacobian is available
    */
-  int (*analyticalJacobianColumn)(void*);
-  int (*initialAnalyticalJacobian)(void*);
+  int (*analyticalJacobianColumn)(void*, threadData_t*);
+  int (*initialAnalyticalJacobian)(void*, threadData_t*);
   modelica_integer jacobianIndex;
 
-  void (*residualFunc)(void*, const double*, double*, const int*);
-  void (*initializeStaticNLSData)(void*, void*);
+  void (*residualFunc)(void**, const double*, double*, const int*);
+  void (*initializeStaticNLSData)(void*, threadData_t *threadData, void*);
+  int (*strictTearingFunctionCall)(struct DATA*, threadData_t *threadData);
 
   void *solverData;
   modelica_real *nlsx;                 /* x */
@@ -315,24 +317,24 @@ typedef struct NONLINEAR_SYSTEM_DATA
   rtclock_t totalTimeClock;             /* time clock for the totalTime  */
 
   void* csvData;                        /* information to save csv data */
-}NONLINEAR_SYSTEM_DATA;
+} NONLINEAR_SYSTEM_DATA;
 
 typedef struct LINEAR_SYSTEM_DATA
 {
   /* set matrix A */
-  void (*setA)(void* data, void* systemData);
+  void (*setA)(void* data, threadData_t *threadData, void* systemData);
   /* set vector b (rhs) */
-  void (*setb)(void* data, void* systemData);
+  void (*setb)(void* data, threadData_t *threadData, void* systemData);
 
-  void (*setAElement)(int row, int col, double value, int nth, void *data);
-  void (*setBElement)(int row, double value, void *data);
+  void (*setAElement)(int row, int col, double value, int nth, void *data, threadData_t *threadData);
+  void (*setBElement)(int row, double value, void *data, threadData_t *threadData);
 
-  int (*analyticalJacobianColumn)(void*);
-  int (*initialAnalyticalJacobian)(void*);
+  int (*analyticalJacobianColumn)(void*, threadData_t*);
+  int (*initialAnalyticalJacobian)(void*, threadData_t*);
   modelica_integer jacobianIndex;
 
-  void (*residualFunc)(void*, const double*, double*, const int*);
-  void (*initializeStaticLSData)(void*, void*);
+  void (*residualFunc)(void**, const double*, double*, const int*);
+  void (*initializeStaticLSData)(void*, threadData_t *threadData, void*);
 
 
   /* attributes of iteration variables */
@@ -399,8 +401,8 @@ typedef struct STATE_SET_DATA
    *
    * if analyticalJacobianColumn == NULL no analyticalJacobian is available
    */
-  int (*analyticalJacobianColumn)(void*);
-  int (*initialAnalyticalJacobian)(void*);
+  int (*analyticalJacobianColumn)(void*, threadData_t*);
+  int (*initialAnalyticalJacobian)(void*, threadData_t*);
   modelica_integer jacobianIndex;
 }STATE_SET_DATA;
 
@@ -415,6 +417,18 @@ typedef struct MODEL_DATA_XML
   FUNCTION_INFO *functionNames;        /* lazy loading; read from file if it is NULL when accessed */
   EQUATION_INFO *equationInfo;         /* lazy loading; read from file if it is NULL when accessed */
 } MODEL_DATA_XML;
+
+typedef struct SUBCLOCK_INFO {
+  RATIONAL shift;
+  RATIONAL factor;
+  const char* solverMethod;
+  modelica_boolean holdEvents;
+} SUBCLOCK_INFO;
+
+typedef struct CLOCK_INFO {
+  long nSubClocks;
+  SUBCLOCK_INFO* subClocks;
+} CLOCK_INFO;
 
 typedef struct MODEL_DATA
 {
@@ -444,6 +458,11 @@ typedef struct MODEL_DATA
 
   long nSamples;                       /* number of different sample-calls */
   SAMPLE_INFO* samplesInfo;            /* array containing each sample-call */
+
+  long nClocks;
+  CLOCK_INFO* clocksInfo;
+  long nSubClocks;
+  SUBCLOCK_INFO* subClocksInfo;
 
   fortran_integer nStates;
   long nVariablesReal;                 /* all Real Variables of the model (states, statesderivatives, algebraics, real discretes) */
@@ -479,6 +498,12 @@ typedef struct MODEL_DATA
   long nJacobians;
 }MODEL_DATA;
 
+typedef struct CLOCK_DATA {
+  modelica_real interval;
+  modelica_real timepoint;
+  long cnt;
+} CLOCK_DATA;
+
 typedef struct SIMULATION_INFO
 {
   modelica_real startTime;
@@ -512,6 +537,8 @@ typedef struct SIMULATION_INFO
   double nextSampleEvent;              /* point in time of next sample-call */
   double *nextSampleTimes;             /* array of next sample time */
   modelica_boolean *samples;           /* array of the current value for all sample-calls */
+
+  CLOCK_DATA *clocksData;
 
   modelica_real* zeroCrossings;
   modelica_real* zeroCrossingsPre;
@@ -585,7 +612,6 @@ typedef struct DATA
   SIMULATION_DATA **localData;
   MODEL_DATA modelData;                /* static stuff */
   SIMULATION_INFO simulationInfo;
-  threadData_t *threadData; /* NOTE: Each thread needs to have its own version of DATA */
   struct OpenModelicaGeneratedFunctionCallbacks *callback;
 } DATA;
 

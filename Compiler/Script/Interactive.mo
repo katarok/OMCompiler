@@ -15278,7 +15278,7 @@ protected
   list<Absyn.Class> classes;
 algorithm
   Absyn.PROGRAM(classes=classes) := inProgram;
-  cl := List.selectFirst1(classes,getClassInProgramWork,inString);
+  cl := List.find1(classes,getClassInProgramWork,inString);
 end getClassInProgram;
 
 protected function getClassInProgramWork
@@ -15699,6 +15699,8 @@ algorithm
         parts2 = replacePublicList(parts, publst2);
       then
         Absyn.CLASS(a,b,c,d,e,Absyn.CLASS_EXTENDS(baseClassName,modifications,cmt,parts2,ann),file_info);
+    // Short class definitions, etc
+    else inClass;
   end match;
 end removeInnerDiffFiledClass;
 

@@ -3,8 +3,8 @@
 #include <Solver/IDA/IDA.h>
 #include <Core/Math/Functions.h>
 
-#include <Core/Utils/numeric/bindings/traits/ublas_vector.hpp>
-#include <Core/Utils/numeric/bindings/traits/ublas_sparse.hpp>
+//#include <Core/Utils/numeric/bindings/traits/ublas_vector.hpp>
+//#include <Core/Utils/numeric/bindings/traits/ublas_sparse.hpp>
 
 Ida::Ida(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
@@ -692,7 +692,7 @@ int Ida::calcFunction(const double& time, const double* y, double* f)
   {
     std::string error = ex.what();
     cerr << "IDA integration error: " << error;
-    returnValue = 1;
+    returnValue = -1;
   }
 
   #ifdef RUNTIME_PROFILING
@@ -709,9 +709,9 @@ int Ida::CV_fCallback(double t, N_Vector y, N_Vector ydot, N_Vector resval, void
 {
   double* ypval=NV_DATA_S(ydot);
   double* rval=NV_DATA_S(resval);
-  ((Ida*) user_data)->calcFunction(t, NV_DATA_S(y), NV_DATA_S(resval));
+  int status = ((Ida*) user_data)->calcFunction(t, NV_DATA_S(y), NV_DATA_S(resval));
   for(size_t i(0); i<((Ida*) user_data)->_dimSys; ++i) rval[i]-=ypval[i];
-  return 0;
+  return status;
 }
 
 void Ida::giveZeroVal(const double &t, const double *y, double *zeroValue)
@@ -872,13 +872,13 @@ int Ida::calcJacobian(double t, long int N, N_Vector fHelp, N_Vector errorWeight
 
 void Ida::initializeColoredJac()
 {
-  _colorOfColumn = new int[_dimSys];
+  /*_colorOfColumn = new int[_dimSys];
   _system->getAColorOfColumn( _colorOfColumn, _dimSys);
 
   _system->getJacobian(_jacobianA);
   _jacobianANonzeros  = boost::numeric::bindings::traits::spmatrix_num_nonzeros (_jacobianA);
   _jacobianAIndex     = boost::numeric::bindings::traits::spmatrix_index2_storage(_jacobianA);
-  _jacobianALeadindex = boost::numeric::bindings::traits::spmatrix_index1_storage(_jacobianA);
+  _jacobianALeadindex = boost::numeric::bindings::traits::spmatrix_index1_storage(_jacobianA);*/
 }
 
 int Ida::reportErrorMessage(ostream& messageStream)

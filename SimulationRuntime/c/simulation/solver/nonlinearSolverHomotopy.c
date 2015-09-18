@@ -124,6 +124,7 @@ typedef struct DATA_HOMOTOPY
   int (*hJac_dh)   (struct DATA_HOMOTOPY*, double*, double*);
 
   DATA* data;
+  threadData_t *threadData;
   int sysNumber;
   int eqSystemNumber;
   double timeValue;
@@ -725,6 +726,7 @@ void swapPointer(double* *p1, double* *p2)
 int getAnalyticalJacobianHomotopy(DATA_HOMOTOPY* solverData, double* jac)
 {
   DATA* data = solverData->data;
+  threadData_t *threadData = solverData->threadData;
   int i,j,k,l,ii;
   NONLINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo.nonlinearSystemData[solverData->sysNumber]);
   const int index = systemData->jacobianIndex;
@@ -738,7 +740,7 @@ int getAnalyticalJacobianHomotopy(DATA_HOMOTOPY* solverData, double* jac)
       if(data->simulationInfo.analyticJacobians[index].sparsePattern.colorCols[ii]-1 == i)
         data->simulationInfo.analyticJacobians[index].seedVars[ii] = 1;
 
-    ((systemData->analyticalJacobianColumn))(data);
+    ((systemData->analyticalJacobianColumn))(data, threadData);
 
     for(j = 0; j < data->simulationInfo.analyticJacobians[index].sizeCols; j++)
     {
@@ -810,10 +812,11 @@ static int getNumericalJacobianHomotopy(DATA_HOMOTOPY* solverData, double *x, do
  */
 static int wrapper_fvec(DATA_HOMOTOPY* solverData, double* x, double* f)
 {
+  void *dataAndThreadData[2] = {solverData->data, solverData->threadData};
   int iflag = 0;
 
   /*TODO: change input to residualFunc from data to systemData */
-  (solverData->data)->simulationInfo.nonlinearSystemData[solverData->sysNumber].residualFunc(solverData->data, x, f, &iflag);
+  (solverData->data)->simulationInfo.nonlinearSystemData[solverData->sysNumber].residualFunc(dataAndThreadData, x, f, &iflag);
   solverData->numberOfFunctionEvaluations++;
 
   return 0;
@@ -972,7 +975,7 @@ int solveSystemWithTotalPivotSearch(int n, double* x, double* A, int* indRow, in
    int pCol, pRow;
    double hValue;
    double hInt;
-   double absMax;
+   double absMax, detJac;
    int r,s;
    double *res;
 
@@ -1026,7 +1029,10 @@ int solveSystemWithTotalPivotSearch(int n, double* x, double* A, int* indRow, in
     }
   }
 
+  for (detJac=1.0,k=0; k<n; k++) detJac *= A[indRow[k] + indCol[k]*n];
+
   debugMatrixPermutedDouble(LOG_NLS_JAC,"Linear System Matrix [Jac res] after decomposition",A, n, m, indRow, indCol);
+  debugDouble(LOG_NLS_JAC,"Determinante = ", detJac);
   /* Solve even singular matrices !!! */
   for (i=n-1;i>=0; i--) {
     if (i>=*rank) {
@@ -1083,11 +1089,11 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
   double lambda1, lambda2;
   double lambdaMin = 1e-4;
   double a2, a3, rhs1, rhs2, D;
-  double alpha = 1e-4;
-
+  double alpha = 1e-1;
+  int firstrun;
 
   int assert = 1;
-  threadData_t *threadData = solverData->data->threadData;
+  threadData_t *threadData = solverData->threadData;
   NONLINEAR_SYSTEM_DATA* nonlinsys = &(solverData->data->simulationInfo.nonlinearSystemData[solverData->data->simulationInfo.currentNonlinearSystemIndex]);
 
   /* debug information */
@@ -1108,6 +1114,7 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
     numberOfIterations++;
     /* debug information */
     debugInt(LOG_NLS_V, "Iteration:", numberOfIterations);
+
     /* solve jacobian and function value (both stored in hJac, last column is fvec), side effects: jacobian matrix is changed */
     if ((numberOfIterations>1) && (solveSystemWithTotalPivotSearch(solverData->n, solverData->dy0, solverData->fJac, solverData->indRow, solverData->indCol, &pos, &rank) != 0))
     {
@@ -1127,22 +1134,17 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
       vecAdd(solverData->n, x, solverData->dy0, solverData->x1);
       printNewtonStep(LOG_NLS_V, solverData);
 
-      assert= 1;
-#ifndef OMC_EMCC
-    MMC_TRY_INTERNAL(simulationJumpBuffer)
-#endif
-      solverData->f(solverData, solverData->x1, solverData->f1);
-      assert = 0;
-#ifndef OMC_EMCC
-    MMC_CATCH_INTERNAL(simulationJumpBuffer)
-#endif
       /* Damping strategy, performance is very sensitive on the value of lambda */
       lambda1 = 1.0;
+      assert = 1;
+      firstrun = 1;
       while (assert && (lambda1 > lambdaMin))
       {
-        lambda1 *= 0.655;
-        vecAddScal(solverData->n, x, solverData->dy0, lambda1, solverData->x1);
-        assert = 1;
+        if (!firstrun){
+          lambda1 *= 0.655;
+          vecAddScal(solverData->n, x, solverData->dy0, lambda1, solverData->x1);
+          assert = 1;
+        }
 #ifndef OMC_EMCC
     MMC_TRY_INTERNAL(simulationJumpBuffer)
 #endif
@@ -1151,14 +1153,19 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
 #ifndef OMC_EMCC
     MMC_CATCH_INTERNAL(simulationJumpBuffer)
 #endif
-        debugDouble(LOG_NLS_V,"Assert of Newton step: lambda1 =", lambda1);
+        firstrun = 0;
+        if (assert){
+          debugDouble(LOG_NLS_V,"Assert of Newton step: lambda1 =", lambda1);
+        }
       }
+
       if (lambda1 < lambdaMin)
       {
         debugDouble(LOG_NLS,"UPS! MUST HANDLE A PROBLEM (Newton method), time : ", solverData->timeValue);
         solverData->info = -1;
         break;
       }
+
       /* Damping (see Numerical Recipes) */
       /* calculate gradient of quadratic function for damping strategy */
       grad_f = -2.0*error_f;
@@ -1193,7 +1200,7 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
           break;
         }
         if ((error_f1 > error_f + alpha*lambda2*grad_f) && (error_f > 1e-12) && (error_f_scaled > 1e-12))
-          {
+        {
           rhs1 = error_f1 - grad_f*lambda1 - error_f;
           rhs2 = error_f2 - grad_f*lambda2 - error_f;
           a3 = (rhs1/(lambda1*lambda1) - rhs2/(lambda2*lambda2))/(lambda1 - lambda2);
@@ -1232,6 +1239,8 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
             break;
           }
         }
+      }else{
+        lambda = lambda1;
       }
     }
     /* updating x, fvec, error_f */
@@ -1266,10 +1275,8 @@ static int newtonAlgorithm(DATA_HOMOTOPY* solverData, double* x)
                              nonlinsys->size,
                              nonlinsys->numberOfCall+1,
                              numberOfIterations,
-                             solverData->dy0,
-                             solverData->dxScaled,
+                             solverData->x,
                              solverData->f1,
-                             solverData->fvecScaled,
                              delta_x,
                              delta_x_scaled,
                              error_f,
@@ -1402,7 +1409,7 @@ static int homotopyAlgorithm(DATA_HOMOTOPY* solverData, double *x)
   int initialStep = 1;
 
   int assert = 1;
-  threadData_t *threadData = solverData->data->threadData;
+  threadData_t *threadData = solverData->threadData;
 
   /* Initialize vector dy2 using chosen startDirection */
   /* set start vector, lambda = 0.0 */
@@ -1659,12 +1666,11 @@ static int homotopyAlgorithm(DATA_HOMOTOPY* solverData, double *x)
  *
  *  \author bbachmann
  */
-int solveHomotopy(DATA *data, int sysNumber)
+int solveHomotopy(DATA *data, threadData_t *threadData, int sysNumber)
 {
   NONLINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo.nonlinearSystemData[sysNumber]);
   DATA_HOMOTOPY* solverData = (DATA_HOMOTOPY*)(systemData->solverData);
   DATA_HYBRD* solverDataHybrid;
-  threadData_t *threadData = data->threadData;
 
   /*
    * Get non-linear equation system
@@ -1702,6 +1708,7 @@ int solveHomotopy(DATA *data, int sysNumber)
   solverData->fJac_f = wrapper_fvec_der;
 
   solverData->data = data;
+  solverData->threadData = threadData;
   solverData->sysNumber = sysNumber;
   solverData->eqSystemNumber = systemData->equationIndex;
   solverData->mixedSystem = mixedSystem;
@@ -1840,7 +1847,7 @@ int solveHomotopy(DATA *data, int sysNumber)
         solverDataHybrid = (DATA_HYBRD*)(solverData->dataHybrid);
         systemData->solverData = solverDataHybrid;
 
-        solverData->info = solveHybrd(data, sysNumber);
+        solverData->info = solveHybrd(data, threadData, sysNumber);
 
         memcpy(solverData->x, systemData->nlsx, solverData->n*(sizeof(double)));
         systemData->solverData = solverData;

@@ -15,6 +15,7 @@
 /*****************************************************************************
 Copyright (c) 2014, IWR TU Dresden, All rights reserved
 *****************************************************************************/
+#if defined(USE_MPI) || defined(USE_OPENMP)
 class Peer
   : public ISolver,  public SolverDefaultImplementation
 {
@@ -75,17 +76,14 @@ private:
 
   // Nulltellenfunktion
   void writePeerOutput(const double &time,const double &h,const int &stp);
-  void evalJ(const double& t, const double* z, double* T, double fac=1);
-  void evalF(const double& t, const double* z, double* f);
-  void evalD(const double& t, const double* y, double* T);
+  void evalJ(const double& t, const double* z, double* T, IContinuous *continuousSystem, ITime *timeSystem, double fac=1);
+  void evalF(const double& t, const double* z, double* f, IContinuous *continuousSystem, ITime *timeSystem);
+  void evalD(const double& t, const double* y, double* T, IContinuous *continuousSystem, ITime *timeSystem);
   void setcycletime(double cycletime);
-  void ros2(double * y, double& tstart, double tend);
+  void ros2(double * y, double& tstart, double tend, IContinuous *continuousSystem, ITime *timeSystem);
 
   ISolverSettings
     *_peersettings;              ///< Input      - Solver settings
-
-  bool
-    _first;
 
   long int
     _dimSys;                 ///< Input       - (total) Dimension of system (=number of ODE)
@@ -132,13 +130,54 @@ private:
 
 
 //   ISystemProperties* _properties;
-   IContinuous* _continuous_system;
+   IContinuous* _continuous_system[5];
 //   IEvent* _event_system;
 //   IMixedSystem* _mixed_system;
-   ITime* _time_system;
+   ITime* _time_system[5];
 
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
 
 };
+#else
+class Peer : public ISolver, public SolverDefaultImplementation
+{
+public:
+	Peer(IMixedSystem* system, ISolverSettings* settings) : ISolver(), SolverDefaultImplementation(system, settings)
+	{
+		throw std::runtime_error("Peer solver is not available.");
+	}
 
+	virtual void setStartTime(const double& time)
+	{}
+
+	virtual void setEndTime(const double& time)
+	{}
+
+	virtual void setInitStepSize(const double& stepSize)
+	{}
+
+	virtual void initialize()
+	{}
+
+	virtual bool stateSelection()
+	{
+		throw std::runtime_error("Peer solver is not available.");
+	}
+
+	virtual void solve(const SOLVERCALL command = UNDEF_CALL)
+	{}
+
+	virtual SOLVERSTATUS getSolverStatus()
+	{ return UNDEF_STATUS; }
+
+	virtual void setTimeOut(unsigned int time_out)
+	{}
+
+	virtual void stop()
+	{}
+
+	virtual void writeSimulationInfo()
+	{}
+};
+#endif

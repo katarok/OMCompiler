@@ -75,11 +75,14 @@ typedef struct {
   fmi2EventInfo eventInfo;
 
   DATA* fmuData;
+  threadData_t *threadData;
   fmi2Boolean toleranceDefined;
   fmi2Real tolerance;
   fmi2Real startTime;
   fmi2Boolean stopTimeDefined;
   fmi2Real stopTime;
+
+  int _need_update;
 } ModelInstance;
 
 #ifdef __cplusplus

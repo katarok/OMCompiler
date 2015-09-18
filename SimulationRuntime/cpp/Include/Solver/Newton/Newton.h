@@ -5,12 +5,14 @@
 
 #pragma once
 
+#include "FactoryExport.h"
+
 #include <Core/System/IAlgLoop.h>                // Interface to AlgLoo
 #include <Core/Solver/IAlgLoopSolver.h>        // Export function from dll
 #include <Core/Solver/INonLinSolverSettings.h>
 #include <Solver/Newton/NewtonSettings.h>
 
-
+#include <Core/Utils/extension/logger.hpp>
 
 
 /*****************************************************************************/
@@ -60,7 +62,8 @@ public:
     /// Returns the status of iteration
     virtual ITERATIONSTATUS getIterationStatus();
     virtual void stepCompleted(double time);
-
+    virtual void restoreOldValues();
+    virtual void restoreNewValues();
 private:
     /// Encapsulation of determination of residuals to given unknowns
     void calcFunction(const double* y, double* residual);
@@ -92,6 +95,8 @@ private:
         *_yHelp,                    ///< Temp        - Auxillary variables
         *_fHelp,                    ///< Temp        - Auxillary variables
         *_jac,                        ///< Temp        - Jacobian
+        *_y_old,
+        *_y_new,
         * _zeroVec;
   long int *_iHelp;
 };

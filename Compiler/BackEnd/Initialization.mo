@@ -347,16 +347,29 @@ protected function inlineWhenForInitializationWhenEquation "author: lochel"
   input list<BackendDAE.Equation> inEqns;
   output list<BackendDAE.Equation> outEqns;
 protected
-  DAE.Exp crexp;
+  DAE.Exp crexp, condition, e;
   BackendDAE.Equation eqn;
+  list<BackendDAE.WhenOperator> whenStmtLst;
+  DAE.ComponentRef cr;
 algorithm
-  if Expression.containsInitialCall(inWEqn.condition, false) then
-    crexp := Expression.crefExp(inWEqn.left);
-    eqn := BackendEquation.generateEquation(crexp, inWEqn.right, inSource, inEqAttr);
-    outEqns := eqn::inEqns;
-  else
-    outEqns := generateInactiveWhenEquationForInitialization(ComponentReference.expandCref(inWEqn.left, true), inSource, inEqns);
-  end if;
+  outEqns := match(inWEqn)
+    case BackendDAE.WHEN_STMTS(condition=condition,whenStmtLst=whenStmtLst) algorithm
+      for stmt in whenStmtLst loop
+        _ := match stmt
+          case BackendDAE.ASSIGN(left = cr, right = e) equation
+            if Expression.containsInitialCall(condition, false) then
+              crexp = Expression.crefExp(cr);
+              eqn = BackendEquation.generateEquation(crexp, e, inSource, inEqAttr);
+              outEqns = eqn::inEqns;
+            else
+              outEqns = generateInactiveWhenEquationForInitialization(ComponentReference.expandCref(cr, true), inSource, inEqns);
+            end if;
+          then ();
+        end match;
+      end for;
+    then outEqns;
+    else inEqns;
+  end match;
 end inlineWhenForInitializationWhenEquation;
 
 protected function inlineWhenForInitializationWhenAlgorithm "author: lochel
@@ -495,6 +508,10 @@ public function collectPreVariablesTraverseExp
 algorithm
   outHS := match (inExp)
     case DAE.CALL(path=Absyn.IDENT(name="pre")) equation
+      (_, outHS) = Expression.traverseExpBottomUp(inExp, collectPreVariablesTraverseExp2, inHS);
+    then outHS;
+
+    case DAE.CALL(path=Absyn.IDENT(name="previous")) equation
       (_, outHS) = Expression.traverseExpBottomUp(inExp, collectPreVariablesTraverseExp2, inHS);
     then outHS;
 
@@ -2243,6 +2260,10 @@ algorithm
     then DAE.CREF(dummyder, ty);
 
     case DAE.CALL(path = Absyn.IDENT(name="pre"), expLst = {DAE.CREF(componentRef=cr)}, attr=DAE.CALL_ATTR(ty=ty)) equation
+      dummyder = ComponentReference.crefPrefixPre(cr);
+    then DAE.CREF(dummyder, ty);
+
+    case DAE.CALL(path = Absyn.IDENT(name="previous"), expLst = {DAE.CREF(componentRef=cr)}, attr=DAE.CALL_ATTR(ty=ty)) equation
       dummyder = ComponentReference.crefPrefixPre(cr);
     then DAE.CREF(dummyder, ty);
 

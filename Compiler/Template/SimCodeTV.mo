@@ -271,6 +271,7 @@ package SimCode
       list<SimEqSystem> allEquations;
       list<list<SimEqSystem>> odeEquations;
       list<list<SimEqSystem>> algebraicEquations;
+      list<ClockedPartition> clockedPartitions;
       Boolean useSymbolicInitialization;         // true if a system to solve the initial problem symbolically is generated, otherwise false
       Boolean useHomotopy;                       // true if homotopy(...) is used during initialization
       list<SimEqSystem> initialEquations;
@@ -291,7 +292,6 @@ package SimCode
       list<BackendDAE.ZeroCrossing> zeroCrossings;
       list<BackendDAE.ZeroCrossing> relations;
       list<BackendDAE.TimeEvent> timeEvents;
-      list<SimWhenClause> whenClauses;
       list<DAE.ComponentRef> discreteModelVars;
       ExtObjInfo extObjInfo;
       MakefileParams makefileParams;
@@ -303,8 +303,23 @@ package SimCode
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
       Option<FmiModelStructure> modelStructure;
     end SIMCODE;
-
   end SimCode;
+
+  uniontype ClockedPartition
+    record CLOCKED_PARTITION
+      DAE.ClockKind baseClock;
+      list<SubPartition> subPartitions;
+    end CLOCKED_PARTITION;
+  end ClockedPartition;
+
+  uniontype SubPartition
+    record SUBPARTITION
+      list<SimEqSystem> equations;
+      list<SimEqSystem> removedEquations;
+      BackendDAE.SubClock subClock;
+      Boolean holdEvents;
+    end SUBPARTITION;
+  end SubPartition;
 
   uniontype DelayedExpression
     record DELAYED_EXPRESSIONS
@@ -402,12 +417,6 @@ package SimCode
     end FUNCTION_PTR;
   end Variable;
 
-  uniontype Statement
-    record ALGORITHM
-       list<DAE.Statement> statementLst;
-    end ALGORITHM;
-  end Statement;
-
   uniontype ExtObjInfo
     record EXTOBJINFO
       list<SimCodeVar.SimVar> vars;
@@ -477,8 +486,7 @@ package SimCode
       Integer index;
       list<DAE.ComponentRef> conditions;    // list of boolean variables as conditions
       Boolean initialCall;                  // true, if top-level branch with initial()
-      DAE.ComponentRef left;
-      DAE.Exp right;
+      list<BackendDAE.WhenOperator> whenStmtLst;
       Option<SimEqSystem> elseWhen;
       DAE.ElementSource source;
     end SES_WHEN;
@@ -534,16 +542,6 @@ package SimCode
     end SES_STATESET;
   end StateSet;
 
-  uniontype SimWhenClause
-    record SIM_WHEN_CLAUSE
-      list<DAE.ComponentRef> conditionVars; // is no longer needed
-      list<DAE.ComponentRef> conditions;    // list of boolean variables as conditions
-      Boolean initialCall;                  // true, if top-level branch with initial()
-      list<BackendDAE.WhenOperator> reinits;
-      Option<BackendDAE.WhenEquation> whenEq;
-    end SIM_WHEN_CLAUSE;
-  end SimWhenClause;
-
   uniontype ModelInfo
     record MODELINFO
       Absyn.Path name;
@@ -554,6 +552,8 @@ package SimCode
       list<Function> functions;
       list<String> labels;
       Integer maxDer;
+      Integer nClocks;
+      Integer nSubClocks;
     end MODELINFO;
   end ModelInfo;
 
@@ -597,7 +597,7 @@ package SimCode
       list<Variable> outVars;
       list<Variable> functionArguments;
       list<Variable> variableDeclarations;
-      list<Statement> body;
+      list<DAE.Statement> body;
       SCode.Visibility visibility;
       builtin.SourceInfo info;
     end FUNCTION;
@@ -606,7 +606,7 @@ package SimCode
       list<Variable> outVars;
       list<Variable> functionArguments;
       list<Variable> variableDeclarations;
-      list<Statement> body;
+      list<DAE.Statement> body;
       builtin.SourceInfo info;
     end PARALLEL_FUNCTION;
     record KERNEL_FUNCTION
@@ -614,7 +614,7 @@ package SimCode
       list<Variable> outVars;
       list<Variable> functionArguments;
       list<Variable> variableDeclarations;
-      list<Statement> body;
+      list<DAE.Statement> body;
       builtin.SourceInfo info;
     end KERNEL_FUNCTION;
     record EXTERNAL_FUNCTION
@@ -825,6 +825,11 @@ package SimCodeUtil
     input DAE.ComponentRef iVarName;
     output Boolean oIsConsecutive;
   end isVarIndexListConsecutive;
+
+  function getSubPartitions
+    input list<SimCode.ClockedPartition> inPartitions;
+    output list<SimCode.SubPartition> outSubPartitions;
+  end getSubPartitions;
 end SimCodeUtil;
 
 package SimCodeFunctionUtil
@@ -1002,6 +1007,14 @@ package BackendDAE
     end ALG_STATE;
   end VarKind;
 
+  uniontype SubClock
+    record SUBCLOCK
+      MMath.Rational factor;
+      MMath.Rational shift;
+      Option<String> solver;
+    end SUBCLOCK;
+  end SubClock;
+
   uniontype ZeroCrossing
     record ZERO_CROSSING
       DAE.Exp relation_;
@@ -1025,6 +1038,12 @@ package BackendDAE
   end TimeEvent;
 
   uniontype WhenOperator "- Reinit Statement"
+    record ASSIGN " left_cr = right_exp"
+      DAE.ComponentRef left     "left hand side of equation";
+      DAE.Exp right             "right hand side of equation";
+      DAE.ElementSource source  "origin of equation";
+    end ASSIGN;
+
     record REINIT
       DAE.ComponentRef stateVar "State variable to reinit" ;
       DAE.Exp value             "Value after reinit" ;
@@ -1058,6 +1077,11 @@ package BackendDAE
       DAE.Exp right;
       Option<WhenEquation> elsewhenPart;
     end WHEN_EQ;
+    record WHEN_STMTS "equation when condition then reinit(...), terminate(...) or assert(...)"
+      DAE.Exp condition                "the when-condition" ;
+      list<WhenOperator> whenStmtLst;
+      Option<WhenEquation> elsewhenPart "elsewhen equation with the same cref on the left hand side.";
+    end WHEN_STMTS;
   end WhenEquation;
 
   constant String optimizationMayerTermName;
@@ -1248,6 +1272,14 @@ package Absyn
   constant builtin.SourceInfo dummyInfo;
 end Absyn;
 
+package MMath
+  uniontype Rational
+    record RATIONAL
+      Integer nom;
+      Integer denom;
+    end RATIONAL;
+  end Rational;
+end MMath;
 
 package DAE
 
@@ -1267,6 +1299,29 @@ package DAE
     record EXTOBJ Absyn.Path fullClassName; end EXTOBJ;
   end VarKind;
 
+  uniontype ClockKind
+    record INFERRED_CLOCK
+    end INFERRED_CLOCK;
+
+    record INTEGER_CLOCK
+      Exp intervalCounter;
+      Integer resolution;
+    end INTEGER_CLOCK;
+
+    record REAL_CLOCK
+      Exp interval;
+    end REAL_CLOCK;
+
+    record BOOLEAN_CLOCK
+      Exp condition;
+      Real startInterval;
+    end BOOLEAN_CLOCK;
+
+    record SOLVER_CLOCK
+      Exp c;
+      String solverMethod;
+    end SOLVER_CLOCK;
+  end ClockKind;
 
   uniontype Exp
     record ICONST
@@ -1766,6 +1821,23 @@ package DAE
       Binding binding;
     end TYPES_VAR;
   end Var;
+
+  uniontype Binding
+    record UNBOUND end UNBOUND;
+
+    record EQBOUND
+      Exp exp;
+      Option<Values.Value> evaluatedExp;
+      Const constant_;
+      BindingSource source;
+    end EQBOUND;
+
+    record VALBOUND
+      Values.Value valBound;
+      BindingSource source;
+    end VALBOUND;
+  end Binding;
+
 
   type TypeSource = list<Absyn.Path> "the class(es) where the type originated";
 
@@ -2907,6 +2979,11 @@ package Expression
     output DAE.Exp cref;
   end crefExp;
 
+  function expCref
+    input DAE.Exp inExp;
+    output DAE.ComponentRef outComponentRef;
+  end expCref;
+
   function subscriptConstants
     "returns true if all subscripts are known (i.e no cref) constant values (no slice or wholedim "
     input list<DAE.Subscript> inSubs;
@@ -2990,10 +3067,21 @@ package Expression
   output list<Integer> outValues;
   end dimensionsList;
 
+  function expDimensionsList
+  input list<DAE.Exp> inDims;
+  output list<Integer> outValues;
+  end expDimensionsList;
+
+
   function isMetaArray
     input DAE.Exp inExp;
     output Boolean outB;
   end isMetaArray;
+
+  function getClockIntvl
+    input DAE.ClockKind inClk;
+    output DAE.Exp outIntvl;
+  end getClockIntvl;
 end Expression;
 
 package ExpressionDump
@@ -3081,6 +3169,7 @@ package Flags
   constant ConfigFlag HPCOM_CODE;
   constant ConfigFlag PROFILING_LEVEL;
   constant ConfigFlag CPP_FLAGS;
+  constant ConfigFlag MATRIX_FORMAT;
 
   function isSet
     input DebugFlag inFlag;
@@ -3163,6 +3252,17 @@ package DAEUtil
     input DAE.ElementSource source;
     output builtin.SourceInfo info;
   end getElementSourceFileInfo;
+
+  function statementsContainReturn
+    input list<DAE.Statement> stmts;
+    output Boolean b;
+  end statementsContainReturn;
+
+  function statementsContainTryBlock
+    input list<DAE.Statement> stmts;
+    output Boolean b;
+  end statementsContainTryBlock;
+
 end DAEUtil;
 
 package Types
