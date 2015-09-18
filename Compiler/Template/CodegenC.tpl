@@ -60,6 +60,7 @@ import CodegenCFunctions.*;
     let target  = simulationCodeTarget()
     let &dummy = buffer ""
     let()= System.tmpTickResetIndex(0,2) /* auxFunction index */
+    let()= System.tmpTickResetIndex(0,20)  /*parfor index*/
     let()= textFile(simulationMakefile(target, simCode), '<%fileNamePrefix%>.makefile') // write the makefile first!
     let()= textFile(simulationLiteralsFile(fileNamePrefix, literals), '<%fileNamePrefix%>_literals.h')
     let()= textFile(simulationFunctionsHeaderFile(fileNamePrefix, modelInfo.functions, recordDecls), '<%fileNamePrefix%>_functions.h')
@@ -144,8 +145,9 @@ end translateInitFile;
     extern int <%symbolName(modelNamePrefixStr,"setInputData")%>(DATA *data, const modelica_boolean file);
     extern int <%symbolName(modelNamePrefixStr,"getTimeGrid")%>(DATA *data, modelica_integer * nsi, modelica_real**t);
     extern void <%symbolName(modelNamePrefixStr,"function_initSynchronous")%>(DATA * data, threadData_t *threadData);
-    extern modelica_boolean <%symbolName(modelNamePrefixStr,"function_updateSynchronous")%>(DATA * data, threadData_t *threadData, long i);
+    extern void <%symbolName(modelNamePrefixStr,"function_updateSynchronous")%>(DATA * data, threadData_t *threadData, long i);
     extern int <%symbolName(modelNamePrefixStr,"function_equationsSynchronous")%>(DATA * data, threadData_t *threadData, long i);
+    extern void <%symbolName(modelNamePrefixStr,"function_savePreSynchronous")%>(DATA *data, threadData_t *threadData);
     <%\n%>
     >>
   end match
@@ -213,7 +215,9 @@ template simulationFile_syn(SimCode simCode, String guid)
 
       <%functionUpdateSynchronous(clockedPartitions, modelNamePrefix(simCode))%>
 
-      <%functionSystemsSynchronous(clockedPartitions, modelNamePrefix(simCode))%>
+      <%functionSystemsSynchronous(getSubPartitions(clockedPartitions), modelNamePrefix(simCode))%>
+
+      <%functionSavePreSynchronous(getSubPartitions(clockedPartitions), modelNamePrefix(simCode))%>
 
       #if defined(__cplusplus)
       }
@@ -223,17 +227,65 @@ template simulationFile_syn(SimCode simCode, String guid)
   end match
 end simulationFile_syn;
 
+template functionSavePreSynchronous(list<SimCode.SubPartition> subPartitions, String modelNamePrefix)
+::=
+  let preVars = subPartitions |> subPartition =>
+    functionSavePreSynchronous1(subPartition); separator="\n"
+  <<
+  /* $P$PRE%v% = %v% */
+  void <%symbolName(modelNamePrefix,"function_savePreSynchronous")%>(DATA *data, threadData_t *threadData)
+  {
+    TRACE_PUSH
+
+    <%preVars%>
+
+    TRACE_POP
+  }
+  >>
+end functionSavePreSynchronous;
+
+template functionSavePreSynchronous1(SimCode.SubPartition subPartition)
+::=
+match subPartition
+  case SUBPARTITION(__) then functionSavePreSynchronous2(vars)
+end functionSavePreSynchronous1;
+
+template functionSavePreSynchronous2(list<tuple<SimCodeVar.SimVar, Boolean>> vars)
+::=
+  vars |> var => functionSavePreSynchronous3(var); separator = "\n"
+end functionSavePreSynchronous2;
+
+template functionSavePreSynchronous3(tuple<SimCodeVar.SimVar, Boolean> var)
+::=
+match var
+  case (simVar, previous) then
+    match simVar
+      case SIMVAR(arrayCref=SOME(c), aliasvar=NOALIAS()) then
+        '<%cref(c)%> = $P$PRE<%cref(c)%>;'
+      case SIMVAR(aliasvar=NOALIAS()) then
+        '<%cref(name)%> = $P$PRE<%cref(name)%>;'
+end functionSavePreSynchronous3;
+
+template isBoolClock(DAE.ClockKind clock)
+::=
+match clock
+  case BOOLEAN_CLOCK(__) then boolStrC(true)
+  else boolStrC(false)
+end isBoolClock;
+
 template functionInitSynchronous(list<ClockedPartition> clockedPartitions, String modelNamePrefix)
 "Synchonous features"
 ::=
   let body = clockedPartitions |> partition =>
     match partition
       case CLOCKED_PARTITION(__) then
+        let boolClock = isBoolClock(baseClock)
         let subClocksInfo = subPartitions |> subPartition =>
                             subPartitionStr(subPartition); separator="\n"
         <<
         data->modelData.clocksInfo[i].nSubClocks = <%listLength(subPartitions)%>;
         data->modelData.clocksInfo[i].subClocks = data->modelData.subClocksInfo + j;
+        data->modelData.clocksInfo[i].isBoolClock = <%boolClock%>;
         i++;
         <%subClocksInfo%>
 
@@ -290,7 +342,7 @@ template functionUpdateSynchronous(list<ClockedPartition> clockedPartitions, Str
   <<
   <%auxFunction%>
   /* Update the base clock. */
-  modelica_boolean <%symbolName(modelNamePrefix,"function_updateSynchronous")%>(DATA *data, threadData_t *threadData, long i)
+  void <%symbolName(modelNamePrefix,"function_updateSynchronous")%>(DATA *data, threadData_t *threadData, long i)
   {
     <%varDecls%>
     modelica_boolean ret;
@@ -298,10 +350,8 @@ template functionUpdateSynchronous(list<ClockedPartition> clockedPartitions, Str
       <%body%>
       default:
         throwStreamPrint(NULL, "Internal Error: unknown base partition %ld", i);
-        ret = <%boolStrC(false)%>;
         break;
     }
-    return ret;
   }
   >>
 end functionUpdateSynchronous;
@@ -312,41 +362,33 @@ match baseClock
   case DAE.BOOLEAN_CLOCK(__) then
     let cond = cref(expCref(condition))
     <<
-    if (data->simulationInfo.clocksData[i].cnt > 0) {
+    if (data->simulationInfo.clocksData[i].cnt > 0)
       data->simulationInfo.clocksData[i].interval = data->localData[0]->timeValue - data->simulationInfo.clocksData[i].timepoint;
-    } else {
+    else
       data->simulationInfo.clocksData[i].interval = <%startInterval%>;
-    }
-    data->simulationInfo.clocksData[i].timepoint = data->localData[0]->timeValue;
-    'return <%cond%> && !$P$PRE<%cond%>;'
     >>
   else
     let &preExp = buffer ""
     let intvl = daeExp(getClockIntvl(baseClock), contextOther, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    if (data->localData[0]->timeValue < data->simulationInfo.clocksData[i].timepoint)
-      ret = <%boolStrC(false)%>;
-    else {
-      data->simulationInfo.clocksData[i].interval = <%intvl%>;
-      data->simulationInfo.clocksData[i].timepoint = data->localData[0]->timeValue + data->simulationInfo.clocksData[i].interval;
-      ret = <%boolStrC(true)%>;
-    }
+    data->simulationInfo.clocksData[i].interval = <%intvl%>;
     >>
 end updatePartition;
 
-template functionSystemsSynchronous(list<ClockedPartition> clockedPartitions, String modelNamePrefix)
+template functionSystemsSynchronous(list<SubPartition> subPartitions, String modelNamePrefix)
 ::=
-  let systs = getSubPartitions(clockedPartitions) |> subPartition hasindex i =>
+  let systs = subPartitions |> subPartition hasindex i =>
     match subPartition
       case SUBPARTITION(__) then
-        functionEquationsSynchronous(i, listAppend(equations, removedEquations), modelNamePrefix)
+        functionEquationsSynchronous(i, vars, listAppend(equations, removedEquations), modelNamePrefix)
     ; separator = "\n"
-  let cases = clockedPartitions |> partition hasindex i =>
+  let cases = subPartitions |> subPartition hasindex i =>
     let name = 'functionEquationsSynchronous_system<%i%>'
     <<
     case <%i%>:
-      return <%symbolName(modelNamePrefix, name)%>(data, threadData);
+      ret = <%symbolName(modelNamePrefix, name)%>(data, threadData);
+      break;
     >>; separator = "\n"
   <<
 
@@ -355,36 +397,38 @@ template functionSystemsSynchronous(list<ClockedPartition> clockedPartitions, St
   /*Clocked systems equations */
   int <%symbolName(modelNamePrefix,"function_equationsSynchronous")%>(DATA *data, threadData_t *threadData, long i)
   {
+    int ret;
     TRACE_PUSH
 
     switch (i) {
       <%cases%>
       default:
         throwStreamPrint(NULL, "Internal Error: unknown sub partition %ld", i);
+        ret = 1;
         break;
     }
 
     TRACE_POP
-    return 0;
+    return ret;
   }
   >>
 
 end functionSystemsSynchronous;
 
-template functionEquationsSynchronous(Integer i, list<SimEqSystem> equations, String modelNamePrefix)
+template functionEquationsSynchronous(Integer i, list<tuple<SimCodeVar.SimVar, Boolean>> vars, list<SimEqSystem> equations, String modelNamePrefix)
 ::=
   let &varDecls = buffer ""
   let &eqfuncs = buffer ""
   let fncalls = equations |> eq => equation_(eq, contextOther, &varDecls, &eqfuncs, modelNamePrefix); separator="\n"
-  let name = 'functionEquationsSynchronous_system<%i%>'
   <<
   <%&eqfuncs%>
 
-  int <%symbolName(modelNamePrefix, name)%>(DATA *data, threadData_t *threadData)
+  int <%symbolName(modelNamePrefix, 'functionEquationsSynchronous_system<%i%>')%>(DATA *data, threadData_t *threadData)
   {
     TRACE_PUSH
+    int i;
+
     <%addRootsTempArray()%>
-    <%varDecls%>
 
     <%fncalls%>
 
@@ -393,15 +437,6 @@ template functionEquationsSynchronous(Integer i, list<SimEqSystem> equations, St
   }
   >>
 end functionEquationsSynchronous;
-
-template prevVarSynchronous(Integer i, SimVar var)
-::=
-match var
-    case SIMVAR(arrayCref=SOME(c), aliasvar=NOALIAS()) then
-      '$P$CLKPRE<%cref(c)%> = <%cref(c)%>;'
-    case SIMVAR(aliasvar=NOALIAS()) then
-      '$P$CLKPRE<%cref(name)%> = <%cref(name)%>;'
-end prevVarSynchronous;
 
 template simulationFile_exo(SimCode simCode, String guid)
 "External Objects"
@@ -796,7 +831,7 @@ template simulationFile(SimCode simCode, String guid)
                      MMC_INIT();
                      >>
     let &mainInit += 'omc_alloc_interface.init();'
-    let pminit = if Flags.isSet(Flags.PARMODAUTO) then 'PM_Model_init("<%fileNamePrefix%>", &simulation_data, functionODE_systems);' else ''
+    let pminit = if Flags.isSet(Flags.PARMODAUTO) then 'PM_Model_init("<%fileNamePrefix%>", &simulation_data, threadData, functionODE_systems);' else ''
     let mainBody =
       <<
       <%symbolName(modelNamePrefixStr,"setupDataStruc")%>(&simulation_data, threadData);
@@ -853,6 +888,7 @@ template simulationFile(SimCode simCode, String guid)
        <%symbolName(modelNamePrefixStr,"functionDAE")%>,
        <%symbolName(modelNamePrefixStr,"input_function")%>,
        <%symbolName(modelNamePrefixStr,"input_function_init")%>,
+       <%symbolName(modelNamePrefixStr,"input_function_updateStartValues")%>,
        <%symbolName(modelNamePrefixStr,"output_function")%>,
        <%symbolName(modelNamePrefixStr,"function_storeDelayed")%>,
        <%symbolName(modelNamePrefixStr,"updateBoundVariableAttributes")%>,
@@ -1476,7 +1512,7 @@ template functionInput(ModelInfo modelInfo, String modelNamePrefix)
       TRACE_PUSH
 
       <%vars.inputVars |> SIMVAR(__) hasindex i0 =>
-        '$P$ATTRIBUTE<%cref(name)%>.start = data->simulationInfo.inputVars[<%i0%>];'
+        'data->simulationInfo.inputVars[<%i0%>] = $P$ATTRIBUTE<%cref(name)%>.start;'
         ;separator="\n"
       %>
 
@@ -1484,6 +1520,18 @@ template functionInput(ModelInfo modelInfo, String modelNamePrefix)
       return 0;
     }
 
+    int <%symbolName(modelNamePrefix,"input_function_updateStartValues")%>(DATA *data, threadData_t *threadData)
+    {
+      TRACE_PUSH
+
+      <%vars.inputVars |> SIMVAR(__) hasindex i0 =>
+        '$P$ATTRIBUTE<%cref(name)%>.start = data->simulationInfo.inputVars[<%i0%>];'
+        ;separator="\n"
+      %>
+
+      TRACE_POP
+      return 0;
+    }
     >>
   end match
 end functionInput;
@@ -2654,7 +2702,7 @@ template functionInitialEquations(list<SimEqSystem> initalEquations, String mode
     <%varDecls%>
 
     data->simulationInfo.discreteCall = 1;
-    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionInitialEquations(<%nrfuncs%>, data, functionInitialEquations_systems);'
+    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionInitialEquations(<%nrfuncs%>, data, threadData, functionInitialEquations_systems);'
     else '<%fncalls%>' %>
     data->simulationInfo.discreteCall = 0;
 
@@ -3461,7 +3509,7 @@ match eqlstlst
     /* forwarded equations */
     <%forwardEqs%>
 
-    static void (*function<%name%>_systems[<%nrfuncs%>])(DATA *) = {
+    static void (*function<%name%>_systems[<%nrfuncs%>])(DATA *,  threadData_t *) = {
       <%arrayEqs%>
     };
 
@@ -3500,7 +3548,7 @@ template functionODE(list<list<SimEqSystem>> derivativEquations, Text method, Op
 
     data->simulationInfo.callStatistics.functionODE++;
 
-    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionODE(<%nrfuncs%>, data, functionODE_systems);'
+    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionODE(<%nrfuncs%>, data, threadData, functionODE_systems);'
     else '<%fncalls%>' %>
 
     <% if profileFunctions() then "rt_accumulate(SIM_TIMER_FUNCTION_ODE);" %>
@@ -3531,8 +3579,10 @@ template functionAlgebraic(list<list<SimEqSystem>> algebraicEquations, String mo
     TRACE_PUSH
     <%varDecls%>
 
-    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionAlg(<%nrfuncs%>, data, functionAlg_systems);'
+    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionAlg(<%nrfuncs%>, data, threadData, functionAlg_systems);'
     else '<%fncalls%>' %>
+
+    <%symbolName(modelNamePrefix,"function_savePreSynchronous")%>(data, threadData);
 
     TRACE_POP
     return 0;
@@ -3583,7 +3633,7 @@ template functionDAE(list<SimEqSystem> allEquationsPlusWhen, String modelNamePre
 
     data->simulationInfo.needToIterate = 0;
     data->simulationInfo.discreteCall = 1;
-    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionDAE(<%nrfuncs%>, data, functionDAE_systems);'
+    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionDAE(<%nrfuncs%>, data, threadData, functionDAE_systems);'
     else '<%fncalls%>' %>
     data->simulationInfo.discreteCall = 0;
 
@@ -4556,7 +4606,11 @@ template equationNonlinear(SimEqSystem eq, Context context, Text &varDecls, Stri
       let returnval2 = match at case at as SOME(__) then 'return 0;' case at as NONE() then ''
       <<
       int retValue;
-      debugDouble(LOG_DT, "Solving nonlinear system <%nls.index%> (STRICT TEARING SET if tearing enabled) at time =", data->localData[0]->timeValue);
+      if(ACTIVE_STREAM(LOG_DT))
+      {
+        infoStreamPrint(LOG_DT, 1, "Solving nonlinear system <%nls.index%> (STRICT TEARING SET if tearing enabled) at time = %18.10e", data->localData[0]->timeValue);
+        messageClose(LOG_DT);
+      }
       <% if profileSome() then
       <<
       SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex);
@@ -4599,7 +4653,11 @@ template equationNonlinearAlternativeTearing(SimEqSystem eq, Context context, Te
       let nonlinindx = at.indexNonLinearSystem
       <<
       int retValue;
-      debugDouble(LOG_DT, "Solving nonlinear system <%at.index%> (CASUAL TEARING SET) at time =", data->localData[0]->timeValue);
+      if(ACTIVE_STREAM(LOG_DT))
+      {
+        infoStreamPrint(LOG_DT, 1, "Solving nonlinear system <%at.index%> (CASUAL TEARING SET) at time = %18.10e", data->localData[0]->timeValue);
+        messageClose(LOG_DT);
+      }
       <% if profileSome() then
       <<
       SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex);
@@ -4843,6 +4901,17 @@ end simulationLiteralsFile;
   #include "<%filePrefix%>_literals.h"
   #include "<%filePrefix%>_includes.h"
 
+  <%if acceptParModelicaGrammar() then
+  <<
+  /* the OpenCL Kernels file name needed in libParModelicaExpl.a */
+  const char* omc_ocl_kernels_source = "<%filePrefix%>_kernels.cl";
+  /* the OpenCL program. Made global to avoid repeated builds */
+  extern cl_program omc_ocl_program;
+  /* The default OpenCL device. If not set (=0) show the selection option.*/
+  unsigned int default_ocl_device = <%getDefaultOpenCLDevice()%>;
+  >>
+  %>
+
   <%if staticPrototypes then
   <<
   /* default, do not make protected functions static */
@@ -4866,7 +4935,7 @@ template simulationParModelicaKernelsFile(String filePrefix, list<Function> func
  "Generates the content of the C file for functions in the simulation case."
 ::=
 
-  /* Reset the parfor loop id counter to 0*/
+  /* Reset the parfor loop id counter to 1*/
   let()= System.tmpTickResetIndex(0,20) /* parfor index */
 
   <<
@@ -4933,7 +5002,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   let libsStr = (makefileParams.libs |> lib => lib ;separator=" ")
   let libsPos1 = if not dirExtra then libsStr //else ""
   let libsPos2 = if dirExtra then libsStr // else ""
-  let ParModelicaExpLibs = if acceptParModelicaGrammar() then 'OMOCLRuntime.lib OpenCL.lib' // else ""
+  let ParModelicaExpLibs = if acceptParModelicaGrammar() then 'ParModelicaExpl.lib OpenCL.lib' // else ""
   let extraCflags = match sopt case SOME(s as SIMULATION_SETTINGS(__)) then
     match s.method case "dassljac" then "-D_OMC_JACOBIAN "
   <<
@@ -4997,8 +5066,8 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   let libsStr = (makefileParams.libs |> lib => lib ;separator=" ")
   let libsPos1 = if not dirExtra then libsStr //else ""
   let libsPos2 = if dirExtra then libsStr // else ""
-  let ParModelicaExpLibs = if acceptParModelicaGrammar() then '-lOMOCLRuntime -lOpenCL' // else ""
-  let ParModelicaAutoLibs = if Flags.isSet(Flags.PARMODAUTO) then '-lom_pm_autort -L. -ltbb' // else ""
+  let ParModelicaExpLibs = if acceptParModelicaGrammar() then '-lParModelicaExpl -lOpenCL' // else ""
+  let ParModelicaAutoLibs = if Flags.isSet(Flags.PARMODAUTO) then '-lParModelicaAuto -ltbb -lpugixml -lboost_system' // else ""
   let extraCflags = match sopt case SOME(s as SIMULATION_SETTINGS(__)) then
     match s.method case "dassljac" then "-D_OMC_JACOBIAN "
 
@@ -5006,7 +5075,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   # Makefile generated by OpenModelica
 
   # Simulations use -O3 by default
-  CC=<%if acceptParModelicaGrammar() then 'g++' else '<%makefileParams.ccompiler%>'%>
+  CC=<%if boolOr(Flags.isSet(Flags.PARMODAUTO),acceptParModelicaGrammar()) then 'g++' else '<%makefileParams.ccompiler%>'%>
   CXX=<%makefileParams.cxxcompiler%>
   LINK=<%makefileParams.linker%>
   EXEEXT=<%makefileParams.exeext%>

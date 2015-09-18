@@ -6,7 +6,7 @@
 
 
 #include <string>
-//#include <vector>
+#include <vector>
 #include <algorithm>
 #include <map>
 #include <cmath>
@@ -15,6 +15,7 @@
 #include <boost/assign/std/vector.hpp> // for 'operator+=()'
 #include <boost/assign/list_of.hpp> // for 'list_of()'
 #include <boost/unordered_map.hpp>
+#include <boost/unordered_set.hpp>
 #include <boost/ref.hpp>
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
@@ -94,9 +95,12 @@ typedef ublas::matrix<double,  ublas::column_major,adaptor_t> shared_matrix_t;
 //typedef boost::function<void (unordered_map<string,unsigned int>&,unordered_map<string,unsigned int>&)> init_prevars_type;
 typedef uBlas::compressed_matrix<double, uBlas::column_major, 0, uBlas::unbounded_array<int>, uBlas::unbounded_array<double> > sparsematrix_t;
 typedef ublas::matrix<double, ublas::column_major> matrix_t;
+#include <Core/SimulationSettings/IGlobalSettings.h>
+#include <Core/Solver/ISolverSettings.h>
 #include <Core/SimulationSettings/ISettingsFactory.h>
 #include <SimCoreFactory/Policies/FactoryConfig.h>
 #include <Core/Utils/Modelica/ModelicaSimulationError.h>
+#include <Core/Utils/Modelica/ModelicaUtilities.h>
 #include <Core/Math/Array.h>
 #include <Core/System/IStateSelection.h>
 #include <Core/System/ISystemProperties.h>
@@ -110,10 +114,7 @@ typedef ublas::matrix<double, ublas::column_major> matrix_t;
 #include <Core/Solver/ILinSolverSettings.h>
 #include <Core/DataExchange/IHistory.h>
 #include <Core/System/IMixedSystem.h>
-#include <Core/SimulationSettings/IGlobalSettings.h>
-#include <Core/System/IMixedSystem.h>
 #include <Core/System/IAlgLoop.h>
-#include <Core/Solver/ISolverSettings.h>
 #include <Core/Solver/ISolver.h>
 #include <Core/Solver/IAlgLoopSolver.h>
 #include <Core/System/IAlgLoopSolverFactory.h>

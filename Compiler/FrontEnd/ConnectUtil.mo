@@ -2781,6 +2781,42 @@ algorithm
   end match;
 end isOutsideStream;
 
+protected function isZeroFlowMinMax
+  "Returns true if the given flow attribute of a connector is zero."
+  input DAE.ComponentRef inStreamCref;
+  input ConnectorElement inElement;
+  output Boolean isZero;
+algorithm
+  if compareCrefStreamSet(inStreamCref, inElement) then
+    isZero := false;
+  elseif isOutsideStream(inElement) then
+    isZero := isZeroFlow(inElement, "max");
+  else
+    isZero := isZeroFlow(inElement, "min");
+  end if;
+end isZeroFlowMinMax;
+
+protected function isZeroFlow
+  "Returns true if the given flow attribute of a connector is zero."
+  input ConnectorElement inElement;
+  input String attr;
+  output Boolean isZero;
+protected
+  DAE.Type ty;
+  Option<DAE.Exp> attr_oexp;
+  DAE.Exp flow_exp, attr_exp;
+algorithm
+  flow_exp := flowExp(inElement);
+  ty := Expression.typeof(flow_exp);
+  attr_oexp := Types.lookupAttributeExp(Types.getAttributes(ty), attr);
+  if isSome(attr_oexp) then
+    SOME(attr_exp) := attr_oexp;
+    isZero := Expression.isZero(attr_exp);
+  else
+    isZero := false;
+  end if;
+end isZeroFlow;
+
 protected function streamEquationGeneral
   "Generates an equation for an outside stream connector element."
   input list<ConnectorElement> inOutsideElements;
@@ -3178,8 +3214,11 @@ protected function generateInStreamExp
   input array<Set> inSetArray;
   input Real inFlowThreshold;
   output DAE.Exp outExp;
+protected
+  list<ConnectorElement> reducedStreams;
 algorithm
-  outExp := match inStreams
+  reducedStreams := List.filterOnFalse(inStreams, function isZeroFlowMinMax(inStreamCref = inStreamCref));
+  outExp := match reducedStreams
     local
       DAE.ComponentRef c;
       Connect.Face f1, f2;
@@ -3198,7 +3237,7 @@ algorithm
           Connect.CONNECTOR_ELEMENT(face = Connect.INSIDE())}
       algorithm
         {Connect.CONNECTOR_ELEMENT(name = c)} :=
-          removeStreamSetElement(inStreamCref, inStreams);
+          removeStreamSetElement(inStreamCref, reducedStreams);
         e := Expression.crefExp(c);
       then
         e;
@@ -3210,7 +3249,7 @@ algorithm
       algorithm
         false := faceEqual(f1, f2);
         {Connect.CONNECTOR_ELEMENT(name = c)} :=
-          removeStreamSetElement(inStreamCref, inStreams);
+          removeStreamSetElement(inStreamCref, reducedStreams);
         e := evaluateInStream(c, inSets, inSetArray, inFlowThreshold);
       then
         e;
@@ -3218,7 +3257,7 @@ algorithm
     // The general case:
     else
       algorithm
-        (outside, inside) := List.splitOnTrue(inStreams, isOutsideStream);
+        (outside, inside) := List.splitOnTrue(reducedStreams, isOutsideStream);
         inside := removeStreamSetElement(inStreamCref, inside);
         e := streamSumEquationExp(outside, inside, inFlowThreshold);
         // Evaluate any inStream calls that were generated.

@@ -81,16 +81,15 @@ import DAEUtil;
 import Debug;
 import Differentiate;
 import Error;
+import EvaluateFunctions;
 import Expression;
 import ExpressionDump;
 import ExpressionSimplify;
 import ExpressionSolve;
-import FindZeroCrossings;
 import Flags;
 import Graph;
 import HashSet;
 import HpcOmSimCode;
-import Initialization;
 import Inline;
 import List;
 import Matching;
@@ -149,6 +148,11 @@ end simulationFindLiterals;
 
 public function createSimCode "entry point to create SimCode from BackendDAE."
   input BackendDAE.BackendDAE inBackendDAE;
+  input BackendDAE.BackendDAE inInitDAE;
+  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input list<BackendDAE.Equation> inRemovedInitialEquationLst;
+  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
+  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Path inClassName;
   input String filenamePrefix;
   input String inFileDir;
@@ -172,7 +176,6 @@ protected
   BackendDAE.SymbolicJacobians symJacs;
   BackendDAE.Variables knownVars;
   Boolean ifcpp;
-  Boolean useHomotopy "true if homotopy(...) is used during initialization";
   HashTableCrIListArray.HashTable varToArrayIndexMapping "maps each array-variable to a array of positions";
   HashTableCrILst.HashTable varToIndexMapping "maps each variable to an array position";
   Integer maxDelayedExpIndex, uniqueEqIndex, numberofEqns, numStateSets, numberOfJacobians, sccOffset;
@@ -220,6 +223,7 @@ protected
 algorithm
   try
     dlow := inBackendDAE;
+    initDAE := inInitDAE;
 
     System.tmpTickReset(0);
     uniqueEqIndex := 1;
@@ -235,16 +239,6 @@ algorithm
       VisualXML.visualizationInfoXML(dlow, filenamePrefix);
     end if;
 
-    // fcall(Flags.FAILTRACE, print, "is that Cpp? : " + Dump.printBoolStr(ifcpp) + "\n");
-  else
-    Error.addInternalError("function createSimCode failed [Transformation from optimised DAE to simulation code structure failed]", sourceInfo());
-    fail();
-  end try;
-
-  // generate initDAE before replacing pre(alias)!
-  (initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters) := Initialization.solveInitialSystem(dlow);
-
-  try
     if Flags.isSet(Flags.ITERATION_VARS) then
       BackendDAEOptimize.listAllIterationVariables(dlow);
     end if;
@@ -253,7 +247,7 @@ algorithm
     dlow := BackendDAEOptimize.simplifyTimeIndepFuncCalls(dlow);
 
     // initialization stuff
-    (initialEquations, removedInitialEquations, uniqueEqIndex, tempvars) := createInitialEquations(initDAE, removedInitialEquationLst, uniqueEqIndex, {});
+    (initialEquations, removedInitialEquations, uniqueEqIndex, tempvars) := createInitialEquations(initDAE, inRemovedInitialEquationLst, uniqueEqIndex, {});
 
     // addInitialStmtsToAlgorithms
     dlow := BackendDAEOptimize.addInitialStmtsToAlgorithms(dlow);
@@ -296,7 +290,7 @@ algorithm
     ((uniqueEqIndex, minValueEquations)) := BackendDAEUtil.foldEqSystem(dlow, createMinValueEquations, (uniqueEqIndex, {}));
     ((uniqueEqIndex, maxValueEquations)) := BackendDAEUtil.foldEqSystem(dlow, createMaxValueEquations, (uniqueEqIndex, {}));
     ((uniqueEqIndex, parameterEquations)) := BackendDAEUtil.foldEqSystem(dlow, createVarNominalAssertFromVars, (uniqueEqIndex, {}));
-    (uniqueEqIndex, parameterEquations) := createParameterEquations(uniqueEqIndex, parameterEquations, primaryParameters, allPrimaryParameters);
+    (uniqueEqIndex, parameterEquations) := createParameterEquations(uniqueEqIndex, parameterEquations, inPrimaryParameters, inAllPrimaryParameters);
     //((uniqueEqIndex, paramAssertSimEqs)) := BackendEquation.traverseEquationArray(BackendEquation.listEquation(paramAsserts), traversedlowEqToSimEqSystem, (uniqueEqIndex, {}));
     //parameterEquations := listAppend(parameterEquations, paramAssertSimEqs);
 
@@ -321,9 +315,7 @@ algorithm
       dlow := BackendDAEUtil.mapEqSystem(dlow, Vectorization.enlargeIteratedArrayVars);
     end if;
 
-
-    (clockedSysts, contSysts) := List.splitOnTrue(dlow.eqs, BackendDAEUtil.isClockedSyst);
-    modelInfo := createModelInfo(inClassName, BackendDAE.DAE(contSysts, shared), initDAE, functions, {}, numStateSets, inFileDir, listLength(clockedSysts));
+    modelInfo := createModelInfo(inClassName, dlow, initDAE, functions, {}, numStateSets, inFileDir, listLength(clockedSysts));
     modelInfo := addTempVars(tempvars, modelInfo);
 
     // external objects
@@ -421,7 +413,7 @@ algorithm
                               odeEquations,
                               algebraicEquations,
                               clockedPartitions,
-                              useHomotopy,
+                              inUseHomotopy,
                               initialEquations,
                               removedInitialEquations,
                               startValueEquations,
@@ -543,39 +535,44 @@ protected function translateClockedEquations
   input list<tuple<Integer,Integer>> ieqSccMapping;
   input list<tuple<Integer,Integer>> ieqBackendSimCodeMapping;
   input list<SimCodeVar.SimVar> itempvars;
-  output list<SimCode.ClockedPartition> outSysts = {};
+  output list<SimCode.ClockedPartition> outPartitions = {};
   output Integer ouniqueEqIndex = iuniqueEqIndex;
   output SimCode.BackendMapping oBackendMapping = iBackendMapping;
   output list<tuple<Integer,Integer>> oeqSccMapping = ieqSccMapping;
   output list<tuple<Integer,Integer>> oeqBackendSimCodeMapping = ieqBackendSimCodeMapping;
   output list<SimCodeVar.SimVar> otempvars = itempvars;
 protected
-  array<list<SimCode.SubPartition>> subPartitionsArr;
-  Integer baseIdx;
+  Integer baseIdx, subPartIdx, cnt;
   BackendDAE.SubClock subClk;
   list<SimCode.SimEqSystem> removedEquations, equations, preEquations;
-  SimCode.SubPartition subPartition;
+  SimCode.SubPartition simSubPartition;
   Boolean holdEvents;
-  array<DAE.ClockKind> baseClocks;
   array<Integer> ass1, stateeqnsmark, zceqnsmarks;
   DAE.FunctionTree funcs;
   BackendDAE.StrongComponents comps;
   Integer sccOffset = iSccOffset;
   list<Integer> varIxs;
   DAE.Type ty;
-  SimCodeVar.SimVar var;
-  list<DAE.ComponentRef> prevCompRefs = {};
-  array<Boolean> previousUsed;
+  BackendDAE.Var var;
   BackendDAE.Equation eq;
   SimCodeVar.SimVar simVar;
   DAE.ComponentRef cr;
+  list<SimCodeVar.SimVar> clockedVars;
+  list<tuple<SimCodeVar.SimVar, Boolean>> prevClockedVars;
+  array<Option<SimCode.SubPartition>> simSubPartitions;
+  BackendDAE.SubPartition subPartition;
+  BackendDAE.Var var;
+  array<Boolean> isPrevVar;
+  SimCode.SimEqSystem simEq;
 algorithm
-  baseClocks := inShared.partitionsInfo.clocks;
-  subPartitionsArr := arrayCreate(arrayLength(baseClocks), {});
+  simSubPartitions := arrayCreate(arrayLength(inShared.partitionsInfo.subPartitions), NONE());
   funcs := BackendDAEUtil.getFunctions(inShared);
   for syst in inSysts loop
-    BackendDAE.CLOCKED_PARTITION(baseClock=baseIdx, subClock=subClk, holdEvents=holdEvents) := syst.partitionKind;
+    //syst := preCalculateStartValues(syst, inShared.knownVars, funcs);
+
+    BackendDAE.CLOCKED_PARTITION(subPartIdx) := syst.partitionKind;
     BackendDAE.MATCHING(ass1=ass1, comps=comps) := syst.matching;
+    subPartition := inShared.partitionsInfo.subPartitions[subPartIdx];
 
     (syst, _, _) := BackendDAEUtil.getIncidenceMatrixfromOption(syst, BackendDAE.ABSOLUTE(), SOME(funcs));
     stateeqnsmark := arrayCreate(BackendDAEUtil.equationArraySizeDAE(syst), 0);
@@ -583,79 +580,74 @@ algorithm
     zceqnsmarks := arrayCreate(BackendDAEUtil.equationArraySizeDAE(syst), 0);
 
     //FIXME: Add continuous clocked systems support
-    (_, _, equations, _, ouniqueEqIndex, otempvars, oeqSccMapping, oeqBackendSimCodeMapping, oBackendMapping) :=
-        createEquationsForSystem(stateeqnsmark, zceqnsmarks, syst, inShared, comps, ouniqueEqIndex, otempvars,
+    (_, _, equations, _, ouniqueEqIndex, clockedVars, oeqSccMapping, oeqBackendSimCodeMapping, oBackendMapping) :=
+        createEquationsForSystem(stateeqnsmark, zceqnsmarks, syst, inShared, comps, ouniqueEqIndex, {},
                                  sccOffset, oeqSccMapping, oeqBackendSimCodeMapping, oBackendMapping);
     sccOffset := listLength(comps) + sccOffset;
-    (equations, prevCompRefs) := traverseExpsEqSystems(equations, replacePreviousExps, {}, {});
+    otempvars := listAppend(clockedVars, otempvars);
 
     (ouniqueEqIndex, removedEquations) := BackendEquation.traverseEquationArray(syst.removedEqs, traversedlowEqToSimEqSystem, (ouniqueEqIndex, {}));
-    (removedEquations, prevCompRefs) := traverseExpsEqSystems(removedEquations, replacePreviousExps, prevCompRefs, {});
 
-    previousUsed := arrayCreate(BackendVariable.varsSize(syst.orderedVars), false);
-    for cr in prevCompRefs loop
-      try
-        (_, varIxs) := BackendVariable.getVar(cr, syst.orderedVars);
-        for idx in varIxs loop
-          arrayUpdate(previousUsed, idx, true);
-        end for;
-      else
-      end try;
+    equations := List.map(equations, addDivExpErrorMsgtoSimEqSystem);
+    removedEquations := List.map(removedEquations, addDivExpErrorMsgtoSimEqSystem);
+
+    prevClockedVars := {};
+    isPrevVar := arrayCreate(BackendVariable.varsSize(syst.orderedVars), false);
+    for cr in subPartition.prevVars loop
+      (_, varIxs) := BackendVariable.getVar(cr, syst.orderedVars);
+      for i in varIxs loop
+        arrayUpdate(isPrevVar, i, true);
+      end for;
     end for;
-
-    preEquations := {};
     for i in 1:BackendVariable.varsSize(syst.orderedVars) loop
-      simVar := dlowvarToSimvar(BackendVariable.getVarAt(syst.orderedVars, i), SOME(inShared.aliasVars), inShared.knownVars);
-      otempvars := simVar::otempvars;
-      if previousUsed[i] and not isAliasVar(simVar) then
+      var := BackendVariable.getVarAt(syst.orderedVars, i);
+      simVar := dlowvarToSimvar(var, SOME(inShared.aliasVars), inShared.knownVars);
+      prevClockedVars := (simVar, isPrevVar[i])::prevClockedVars;
+      clockedVars := simVar::clockedVars;
+      if isPrevVar[i] then
         cr := simVar.name;
-        simVar.name := ComponentReference.crefPrefixString("$previous", simVar.name);
-        otempvars := simVar::otempvars;
-        preEquations := SimCode.SES_SIMPLE_ASSIGN(ouniqueEqIndex, simVar.name, DAE.CREF(cr, simVar.type_), DAE.emptyElementSource)::preEquations;
+        simVar.name := ComponentReference.crefPrefixString("$CLKPRE", cr);
+        clockedVars := simVar::clockedVars;
+        simEq := SimCode.SES_SIMPLE_ASSIGN(ouniqueEqIndex, simVar.name, DAE.CREF(cr, simVar.type_), DAE.emptyElementSource);
+        equations := simEq::equations;
         ouniqueEqIndex := ouniqueEqIndex + 1;
       end if;
     end for;
 
+    otempvars := listAppend(clockedVars, otempvars);
+    simSubPartition := SimCode.SUBPARTITION(prevClockedVars, equations, removedEquations, subPartition.clock, subPartition.holdEvents);
 
-    equations := List.map(listAppend(equations, preEquations), addDivExpErrorMsgtoSimEqSystem);
-    removedEquations := List.map(removedEquations, addDivExpErrorMsgtoSimEqSystem);
+    assert(isNone(simSubPartitions[subPartIdx]), "SimCodeUtil.translateClockedEquations failed");
+    arrayUpdate(simSubPartitions, subPartIdx, SOME(simSubPartition));
 
-    subPartition := SimCode.SUBPARTITION(equations, removedEquations, subClk, holdEvents);
-    arrayUpdate(subPartitionsArr, baseIdx, subPartition::subPartitionsArr[baseIdx]);
   end for;
-  for i in 1:arrayLength(baseClocks) loop
-    outSysts := SimCode.CLOCKED_PARTITION(baseClocks[i], subPartitionsArr[i])::outSysts;
-  end for;
+  outPartitions := createClockedSimPartitions(inShared.partitionsInfo.basePartitions, simSubPartitions);
 end translateClockedEquations;
 
-protected function replacePreviousExps
-  input DAE.Exp inExp;
-  input list<DAE.ComponentRef> inPrevCompRefs;
-  output DAE.Exp outExp;
-  output list<DAE.ComponentRef> outPrevCompRefs;
-algorithm
-  (outExp, outPrevCompRefs) := Expression.traverseExpBottomUp(inExp, replacePreviousExps1, inPrevCompRefs);
-end replacePreviousExps;
-
-protected function replacePreviousExps1
-"Replace expressions: previous(x) --> $previous_x
- and collect x"
-  input DAE.Exp inExp;
-  input list<DAE.ComponentRef> inPrevCompRefs;
-  output DAE.Exp outExp;
-  output list<DAE.ComponentRef> outPrevCompRefs;
+protected function createClockedSimPartitions
+  input array<BackendDAE.BasePartition> basePartitions;
+  input array<Option<SimCode.SubPartition>> subPartitions;
+  output list<SimCode.ClockedPartition> clockedPartitions = {};
 protected
-  DAE.ComponentRef cr;
-  DAE.Exp e;
+  Integer off = 1;
+  BackendDAE.BasePartition basePartition;
+  list<SimCode.SubPartition> simSubPartitions;
 algorithm
-  (outExp, outPrevCompRefs) := match inExp
-    local
-      DAE.Type ty;
-    case DAE.CALL(path=Absyn.IDENT("previous"), expLst={e as DAE.CREF(cr, ty)})
-      then (DAE.CREF(ComponentReference.crefPrefixString("$previous", cr), ty), cr::inPrevCompRefs);
-    else (inExp, inPrevCompRefs);
-  end match;
-end replacePreviousExps1;
+  for i in 1:arrayLength(basePartitions) loop
+    basePartition := basePartitions[i];
+    simSubPartitions := List.map(Array.getRange(off, off + basePartition.nSubClocks - 1, subPartitions), Util.getOption);
+    simSubPartitions := listReverse(simSubPartitions);
+    off := off + basePartition.nSubClocks;
+    clockedPartitions := SimCode.CLOCKED_PARTITION(basePartition.clock, simSubPartitions)::clockedPartitions;
+  end for;
+end createClockedSimPartitions;
+
+protected function getSimVarCompRef
+  input SimCodeVar.SimVar inVar;
+  output DAE.ComponentRef outComp;
+algorithm
+  outComp := inVar.name;
+end getSimVarCompRef;
 
 public function getSubPartitions
   input list<SimCode.ClockedPartition> inPartitions;
@@ -1922,7 +1914,7 @@ algorithm
         eqn = BackendDAE.EQUATION(e1, e2, source, BackendDAE.EQ_ATTR_DEFAULT_UNKNOWN);
         (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({eqn}, iuniqueEqIndex, itempvars);
         cr = if BackendVariable.isStateVar(v) then ComponentReference.crefPrefixDer(cr) else cr;
-        (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquation(eqn, containsHomotopyCall, false);
+        (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(eqn, containsHomotopyCall, false);
       then
         ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, {cr}, 0, NONE(), false, homotopySupport, false), NONE())}, uniqueEqIndex+1, tempvars);
 
@@ -1937,7 +1929,7 @@ algorithm
         // index = System.tmpTick();
         (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({eqn}, iuniqueEqIndex, itempvars);
         cr = if BackendVariable.isStateVar(v) then ComponentReference.crefPrefixDer(cr) else cr;
-        (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquation(eqn, containsHomotopyCall, false);
+        (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(eqn, containsHomotopyCall, false);
       then
         ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, {cr}, 0, NONE(), false, homotopySupport, false), NONE())}, uniqueEqIndex+1, tempvars);
 
@@ -2818,6 +2810,7 @@ algorithm
       (beqs, sources) = BackendDAEUtil.getEqnSysRhs(inEquationArray, inVars, SOME(inFuncs));
       beqs = listReverse(beqs);
       simJac = List.map1(jac, jacToSimjac, inVars);
+      //simJac = simJacCSRToCSC(simJac);
     then ({SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(iuniqueEqIndex, mixedEvent, simVars, beqs, simJac, {}, NONE(), sources, 0), NONE())}, iuniqueEqIndex+1, itempvars);
 
     // Time varying nonlinear jacobian. Non-linear system of equations.
@@ -2830,7 +2823,7 @@ algorithm
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(eqn_lst, iuniqueEqIndex, itempvars);
       // create symbolic jacobian for simulation
       (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-      (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquationList(eqn_lst, containsHomotopyCall, false);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(eqn_lst, containsHomotopyCall, false);
     then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, jacobianMatrix, false, homotopySupport, mixedSystem), NONE())}, uniqueEqIndex+1, tempvars);
 
     // No analytic jacobian available. Generate non-linear system.
@@ -2841,7 +2834,7 @@ algorithm
       eqn_lst = BackendEquation.equationList(inEquationArray);
       crefs = BackendVariable.getAllCrefFromVariables(inVars);
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations(eqn_lst, iuniqueEqIndex, itempvars);
-      (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquationList(eqn_lst, containsHomotopyCall, false);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(eqn_lst, containsHomotopyCall, false);
     then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, NONE(), false, homotopySupport, mixedSystem), NONE())}, uniqueEqIndex+1, tempvars);
 
     // failure
@@ -3073,7 +3066,7 @@ algorithm
        simequations = listAppend(simequations, resEqs);
 
        (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-       (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquationList(reqns, containsHomotopyCall, false);
+       (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(reqns, containsHomotopyCall, false);
 
        nlSystem = SimCode.NONLINEARSYSTEM(uniqueEqIndex, simequations, tcrs, 0, jacobianMatrix, linear, homotopySupport, mixedSystem);
 
@@ -3095,7 +3088,7 @@ algorithm
          simequations = listAppend(simequations, resEqs);
 
          (jacobianMatrix, uniqueEqIndex, tempvars) = createSymbolicSimulationJacobian(inJacobian, uniqueEqIndex, tempvars);
-         (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquationList(reqns, containsHomotopyCall, false);
+         (_, homotopySupport) = BackendEquation.traverseExpsOfEquationList(reqns, containsHomotopyCall, false);
 
          alternativeTearingNl = SOME(SimCode.NONLINEARSYSTEM(uniqueEqIndex, simequations, tcrs, 0, jacobianMatrix, linear, homotopySupport, mixedSystem));
        else
@@ -4234,21 +4227,11 @@ protected
   list<BackendDAE.Equation> eqs;
 algorithm
   try
-    (varsWithBind,varsWithoutBind) := List.separateOnTrue(varLstIn,BackendVariable.varHasBindExp);
-    bindExps := List.map(varsWithBind,BackendVariable.varBindExp);
-    eqs := List.threadMap2(List.map(varsWithBind,BackendVariable.varExp), bindExps, BackendEquation.generateEquation, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
-    (m, mT) := BackendDAEUtil.incidenceMatrixDispatch(BackendVariable.listVar1(varsWithBind), BackendEquation.listEquation(eqs), BackendDAE.ABSOLUTE(), NONE());
-    nVars := listLength(varsWithBind);
-    nEqs := listLength(eqs);
-    ass1 := arrayCreate(listLength(varsWithBind), -1);
-    ass2 := arrayCreate(listLength(eqs), -1);
-    Matching.matchingExternalsetIncidenceMatrix(nVars, nEqs, m);
-    BackendDAEEXT.matching(nVars, nEqs, 5, -1, 0.0, 1);
-    BackendDAEEXT.getAssignment(ass2, ass1);
-    comps := Sorting.TarjanTransposed(mT, ass2);
-    order := List.map1(List.flatten(comps),Array.getIndexFirst,ass1);
-    varsWithBind := List.map1(order,List.getIndexFirst,varsWithBind);
-    varLstOut := listAppend(varsWithoutBind,varsWithBind);
+	  (varsWithBind,varsWithoutBind) := List.separateOnTrue(varLstIn,BackendVariable.varHasBindExp);
+	  (comps,ass1,ass2) := BackendDAEUtil.causalizeVarBindSystem(varsWithBind);
+	  order := List.map1(List.flatten(comps),Array.getIndexFirst,ass1);
+	  varsWithBind := List.map1(order,List.getIndexFirst,varsWithBind);
+	  varLstOut := listAppend(varsWithoutBind,varsWithBind);
   else
     varLstOut := varLstIn;
   end try;
@@ -4399,6 +4382,40 @@ algorithm
         ((row - 1, col - 1, SimCode.SES_RESIDUAL(0, e, source)));
   end match;
 end jacToSimjac;
+
+protected function simJacCSRToCSC"transforms the simjac from compact spars row matrix format to compact sparse column matrix"
+  input list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJacIn;
+  output list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJacOut;
+protected
+  Integer row,col,i;
+  SimCode.SimEqSystem simEqSys;
+  tuple<Integer,Integer,SimCode.SimEqSystem> entry;
+  list<tuple<Integer,Integer,SimCode.SimEqSystem>> simJac={};
+algorithm
+  // swap row and col indexes
+  for entry in simJacIn loop
+    (row,col,simEqSys) := entry;
+    simJac := (col,row,simEqSys)::simJac;
+  end for;
+  // order column indexes
+  simJacOut := List.sort(simJac,simJacCSRToCSC1);
+end simJacCSRToCSC;
+
+protected function simJacCSRToCSC1
+  input tuple<Integer,Integer,SimCode.SimEqSystem> e1;
+  input tuple<Integer,Integer,SimCode.SimEqSystem> e2;
+  output Boolean isGt;
+protected
+  Integer i11,i12,i21,i22;
+algorithm
+  (i11,i12,_) := e1;
+  (i21,i22,_) := e2;
+  if intNe(i11,i21) then
+    isGt := intGt(i11,i21);
+  else
+    isGt := intGt(i12,i22);
+  end if;
+end simJacCSRToCSC1;
 
 protected function createSingleWhenEqnCode
   input BackendDAE.Equation inEquation;
@@ -4669,7 +4686,7 @@ algorithm
       //       solved variables are on rhs and also lhs. This is not
       //       cosidered yet there.
       (resEqs, uniqueEqIndex, tempvars) = createNonlinearResidualEquations({inEquation}, iuniqueEqIndex, itempvars);
-      (_, homotopySupport) = BackendDAETransform.traverseExpsOfEquation(inEquation, containsHomotopyCall, false);
+      (_, homotopySupport) = BackendEquation.traverseExpsOfEquation(inEquation, containsHomotopyCall, false);
     then ({SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(uniqueEqIndex, resEqs, crefs, 0, NONE(), false, homotopySupport, false), NONE())}, uniqueEqIndex+1, tempvars);
 
     // failure
@@ -5643,7 +5660,8 @@ algorithm
                              numStateSets, numOptimizeConstraints, numOptimizeFinalConstraints);
     maxDer := getHighestDerivation(dlow);
     modelInfo := SimCode.MODELINFO(class_, dlow.shared.info.description, directory, varInfo, vars, functions,
-                                   labels, maxDer, arrayLength(dlow.shared.partitionsInfo.clocks), nSubClock);
+                                   labels, maxDer, arrayLength(dlow.shared.partitionsInfo.basePartitions),
+                                   arrayLength(dlow.shared.partitionsInfo.subPartitions));
   else
     Error.addInternalError("createModelInfo failed", sourceInfo());
     fail();
@@ -5685,6 +5703,55 @@ algorithm
           next, ny_string, np_string, na_string, 0, 0, 0, 0, numStateSets,0,numOptimizeConstraints, numOptimizeFinalConstraints);
 end createVarInfo;
 
+protected function evaluateStartValues"evaluates functions in the start values in the variableAttributes"
+  input BackendDAE.Var inVar;
+  input DAE.FunctionTree funcTreeIn;
+  output BackendDAE.Var outVar;
+  output DAE.FunctionTree funcTreeOut;
+algorithm
+  (outVar,funcTreeOut) := matchcontinue(inVar,funcTreeIn)
+    local
+      Option<DAE.Exp> o1;
+      Option<DAE.VariableAttributes> o2;
+      DAE.Exp startValue;
+      DAE.VariableAttributes attr;
+  case(BackendDAE.VAR(bindExp = o1, values = o2), _)
+    equation
+      if isSome(o1) then
+        startValue = Util.getOption(o1);
+        startValue = EvaluateFunctions.evaluateConstantFunctionCallExp(startValue,funcTreeIn);
+        inVar.bindExp = SOME(startValue);
+      end if;
+
+      if isSome(o2) then
+        attr = Util.getOption(o2);
+        attr = evaluateVariableAttributes(attr,funcTreeIn);
+        inVar.values = SOME(attr);
+      end if;
+    then (inVar,funcTreeIn);
+
+    else
+      then (inVar,funcTreeIn);
+  end matchcontinue;
+end evaluateStartValues;
+
+protected function evaluateVariableAttributes"evaluates functions in the start values, if necessary"
+  input DAE.VariableAttributes attrIn;
+  input DAE.FunctionTree funcTree;
+  output DAE.VariableAttributes attrOut;
+algorithm
+  attrOut := matchcontinue(attrIn, funcTree)
+    local
+      DAE.Exp exp;
+  case(DAE.VAR_ATTR_REAL(start=SOME(exp)),_)
+    equation
+      exp = EvaluateFunctions.evaluateConstantFunctionCallExp(exp,funcTree);
+      attrIn.start = SOME(exp);
+    then attrIn;
+  else
+  then attrIn;
+  end matchcontinue;
+end evaluateVariableAttributes;
 
 protected function preCalculateStartValues"calculates start values of variables which have none. The calculation is based on the start values of the vars in the assigned equation.
 This is a possible solution to equip vars with proper start values (would be computed anyway).
@@ -5693,6 +5760,7 @@ If the var is a torn var, there is no way to compute the proper start value befo
 author:Waurich TUD 2015-01"
   input BackendDAE.EqSystem systIn;
   input BackendDAE.Variables knownVars;
+  input DAE.FunctionTree funcTree;
   output BackendDAE.EqSystem systOut;
 protected
   list<Integer> varMap;
@@ -5742,6 +5810,9 @@ algorithm
   stateIdcs := List.map(stateInfo, Util.tuple21);
   stateKinds := List.map(stateInfo, Util.tuple22);
   vars := List.threadFold(stateIdcs, stateKinds,BackendVariable.setVarKindForVar, vars);
+
+  //evaluate function calls in variable attributes (start-value)
+  (vars,_) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars,evaluateStartValues,funcTree);
     //BackendDump.dumpVariables(vars,"VAR AFTER");
   systOut := BackendDAEUtil.setEqSystVars(systIn, vars);
 end preCalculateStartValues;
@@ -5975,13 +6046,18 @@ protected
   BackendDAE.Variables extvars1, extvars2;
   BackendDAE.Variables aliasVars1, aliasVars2;
   BackendDAE.EqSystems systs1, systs2;
+  DAE.FunctionTree funcTree;
   HashSet.HashSet hs = HashSet.emptyHashSet();
 algorithm
-  BackendDAE.DAE(eqs=systs1, shared=BackendDAE.SHARED(knownVars=knvars1, externalObjects=extvars1, aliasVars=aliasVars1)) := inSimDAE;
+  BackendDAE.DAE(eqs=systs1, shared=BackendDAE.SHARED(knownVars=knvars1, externalObjects=extvars1, aliasVars=aliasVars1, functionTree=funcTree)) := inSimDAE;
   BackendDAE.DAE(eqs=systs2, shared=BackendDAE.SHARED(knownVars=knvars2, externalObjects=extvars2, aliasVars=aliasVars2)) := inInitDAE;
 
+  systs1 := List.filterOnFalse(systs1, BackendDAEUtil.isClockedSyst);
+  systs2 := List.filterOnFalse(systs2, BackendDAEUtil.isClockedSyst);
+
   if not Flags.isSet(Flags.NO_START_CALC) then
-    systs1 := List.map1(systs1, preCalculateStartValues, knvars1);
+    (systs1) := List.map2(systs1, preCalculateStartValues, knvars1, funcTree);
+    (knvars1, _) := BackendVariable.traverseBackendDAEVarsWithUpdate(knvars1, evaluateStartValues, funcTree);
     //systs2 := List.map1(systs2, preCalculateStartValues, knvars2);
   end if;
 
@@ -6147,9 +6223,9 @@ algorithm
 
   if not BaseHashSet.has(inVar.varName, hs) and not ComponentReference.isPreCref(inVar.varName) then
     (vars, hs) := extractVarFromVar(inVar, aliasVars, v, vars, hs);
-  //  print("Added  " + ComponentReference.crefStr(inVar.varName) + "\n");
+  //  print("Added  " + ComponentReference.printComponentRefStr(inVar.varName) + "\n");
   //else
-  //  print("Skiped " + ComponentReference.crefStr(inVar.varName) + "\n");
+  //  print("Skiped " + ComponentReference.printComponentRefStr(inVar.varName) + "\n");
   end if;
 
   outTpl := (vars, aliasVars, v, hs);
@@ -9598,9 +9674,9 @@ protected
   list<SimCodeVar.SimVar> paramVars;
   list<SimCodeVar.SimVar> intParamVars;
   list<SimCodeVar.SimVar> boolParamVars;
-  //list<SimCodeVar.SimVar> stringAlgVars;
-  //list<SimCodeVar.SimVar> stringParamVars;
-  //list<SimCodeVar.SimVar> stringAliasVars;
+  list<SimCodeVar.SimVar> stringAlgVars;
+  list<SimCodeVar.SimVar> stringParamVars;
+  list<SimCodeVar.SimVar> stringAliasVars;
   //list<SimCodeVar.SimVar> extObjVars;
   list<SimCodeVar.SimVar> constVars;
   list<SimCodeVar.SimVar> intConstVars;
@@ -9611,17 +9687,17 @@ protected
   list<SimCodeVar.SimVar> realOptimizeFinalConstraintsVars;
   HashTableCrILst.HashTable varIndexMappingHashTable;
   HashTableCrIListArray.HashTable varArrayIndexMappingHashTable;
-  tuple<Integer,Integer,Integer> currentVarIndices;
+  tuple<Integer,Integer,Integer,Integer> currentVarIndices; //current variable index real,int,bool,string
 algorithm
   (oVarToArrayIndexMapping,oVarToIndexMapping) := match(iModelInfo)
     case(SimCode.MODELINFO(vars = SimCodeVar.SIMVARS(stateVars=stateVars,derivativeVars=derivativeVars,algVars=algVars,discreteAlgVars=discreteAlgVars,
-        intAlgVars=intAlgVars,boolAlgVars=boolAlgVars,aliasVars=aliasVars,intAliasVars=intAliasVars,boolAliasVars=boolAliasVars,paramVars=paramVars,
-        intParamVars=intParamVars,boolParamVars=boolParamVars,inputVars=inputVars,outputVars=outputVars, constVars=constVars, intConstVars=intConstVars, boolConstVars=boolConstVars,
-        realOptimizeConstraintsVars=realOptimizeConstraintsVars, realOptimizeFinalConstraintsVars=realOptimizeFinalConstraintsVars)))
+        intAlgVars=intAlgVars,boolAlgVars=boolAlgVars,stringAlgVars=stringAlgVars,aliasVars=aliasVars,intAliasVars=intAliasVars,boolAliasVars=boolAliasVars,stringAliasVars=stringAliasVars,paramVars=paramVars,
+        intParamVars=intParamVars,boolParamVars=boolParamVars,stringParamVars=stringParamVars,inputVars=inputVars,outputVars=outputVars, constVars=constVars, intConstVars=intConstVars, boolConstVars=boolConstVars,
+        stringConstVars=stringConstVars,realOptimizeConstraintsVars=realOptimizeConstraintsVars, realOptimizeFinalConstraintsVars=realOptimizeFinalConstraintsVars)))
       equation
         varArrayIndexMappingHashTable = HashTableCrIListArray.emptyHashTableSized(BaseHashTable.biggerBucketSize);
         varIndexMappingHashTable = HashTableCrILst.emptyHashTableSized(BaseHashTable.biggerBucketSize);
-        currentVarIndices = (1,1,1); //0 is reserved for unused variables
+        currentVarIndices = (1,1,1,1); //0 is reserved for unused variables
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(stateVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(derivativeVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
 
@@ -9629,20 +9705,24 @@ algorithm
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(discreteAlgVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(intAlgVars, function addVarToArrayIndexMapping(iVarType=2), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(boolAlgVars, function addVarToArrayIndexMapping(iVarType=3), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
+        ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(stringAlgVars, function addVarToArrayIndexMapping(iVarType=4), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(paramVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(intParamVars, function addVarToArrayIndexMapping(iVarType=2), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(boolParamVars, function addVarToArrayIndexMapping(iVarType=3), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
+        ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(stringParamVars, function addVarToArrayIndexMapping(iVarType=4), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         //((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(inputVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         //((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(outputVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(constVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(intConstVars, function addVarToArrayIndexMapping(iVarType=2), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(boolConstVars, function addVarToArrayIndexMapping(iVarType=3), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
+        ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(stringConstVars, function addVarToArrayIndexMapping(iVarType=4), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(realOptimizeConstraintsVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(realOptimizeFinalConstraintsVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
 
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(aliasVars, function addVarToArrayIndexMapping(iVarType=1), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(intAliasVars, function addVarToArrayIndexMapping(iVarType=2), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
         ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(boolAliasVars, function addVarToArrayIndexMapping(iVarType=3), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
+        ((currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable)) = List.fold(stringAliasVars, function addVarToArrayIndexMapping(iVarType=4), (currentVarIndices, varArrayIndexMappingHashTable, varIndexMappingHashTable));
       then (varArrayIndexMappingHashTable, varIndexMappingHashTable);
     else
       then (HashTableCrIListArray.emptyHashTableSized(0), HashTableCrILst.emptyHashTableSized(0));
@@ -9652,10 +9732,10 @@ end createVarToArrayIndexMapping;
 public function addVarToArrayIndexMapping "author: marcusw
   Adds the given variable to the array-mapping and to the var-mapping."
   input SimCodeVar.SimVar iVar;
-  input Integer iVarType; //1 = real ; 2 = int ; 3 = bool
-  input tuple<tuple<Integer,Integer,Integer>, HashTableCrIListArray.HashTable, HashTableCrILst.HashTable> iCurrentVarIndicesHashTable;
+  input Integer iVarType; //1 = real ; 2 = int ; 3 = bool ; 4 = string
+  input tuple<tuple<Integer,Integer,Integer,Integer>, HashTableCrIListArray.HashTable, HashTableCrILst.HashTable> iCurrentVarIndicesHashTable;
   //<current indices, array related mapping, single var related mapping>
-  output tuple<tuple<Integer,Integer,Integer>, HashTableCrIListArray.HashTable, HashTableCrILst.HashTable> oCurrentVarIndicesHashTable;
+  output tuple<tuple<Integer,Integer,Integer,Integer>, HashTableCrIListArray.HashTable, HashTableCrILst.HashTable> oCurrentVarIndicesHashTable;
 protected
   DAE.ComponentRef arrayCref, varName, name, arrayName;
   Integer varIdx, arrayIndex;
@@ -9664,7 +9744,7 @@ protected
   list<String> numArrayElement;
   list<DAE.ComponentRef> expandedCrefs;
   list<String> numArrayElement;
-  tuple<Integer,Integer,Integer> tmpCurrentVarIndices;
+  tuple<Integer,Integer,Integer,Integer> tmpCurrentVarIndices;
   list<DAE.Subscript> arraySubscripts;
   HashTableCrIListArray.HashTable tmpVarToArrayIndexMapping; // Maps each array variable to a list of variable indices
   HashTableCrILst.HashTable tmpVarToIndexMapping; // Maps each variable to a concrete index
@@ -9729,13 +9809,13 @@ protected function getArrayIdxByVar "author: marcusw
   input SimCodeVar.SimVar iVar;
   input Integer iVarType;
   input HashTableCrILst.HashTable iVarToIndexMapping;
-  input tuple<Integer,Integer,Integer> iCurrentVarIndices;
-  output tuple<Integer,Integer,Integer> oCurrentVarIndices;
+  input tuple<Integer,Integer,Integer,Integer> iCurrentVarIndices;
+  output tuple<Integer,Integer,Integer,Integer> oCurrentVarIndices;
   output Integer oVarIndex;
 protected
   DAE.ComponentRef varName, name;
   Integer varIdx;
-  tuple<Integer,Integer,Integer> tmpCurrentVarIndices;
+  tuple<Integer,Integer,Integer,Integer> tmpCurrentVarIndices;
 algorithm
   (oCurrentVarIndices, oVarIndex) := match(iVar, iVarToIndexMapping, iCurrentVarIndices)
     case(SimCodeVar.SIMVAR(name=name, aliasvar=SimCodeVar.NOALIAS()),_,tmpCurrentVarIndices)
@@ -9769,20 +9849,22 @@ end getArrayIdxByVar;
 
 protected function getVarToArrayIndexByType "author: marcusw
   Return the the current variable index of the given tuple, regarding the given type. The index-tuple is incremented and returned."
-  input Integer iVarType; //1 = real ; 2 = int ; 3 = bool
-  input tuple<Integer,Integer,Integer> iCurrentVarIndices;
+  input Integer iVarType; //1 = real ; 2 = int ; 3 = bool ; 4 = string
+  input tuple<Integer,Integer,Integer,Integer> iCurrentVarIndices;
   output Integer oVarIdx;
-  output tuple<Integer,Integer,Integer> oCurrentVarIndices;
+  output tuple<Integer,Integer,Integer,Integer> oCurrentVarIndices;
 protected
-  Integer floatVarIdx, intVarIdx, boolVarIdx;
+  Integer floatVarIdx, intVarIdx, boolVarIdx, stringVarIdx;
 algorithm
   (oCurrentVarIndices, oVarIdx) := match(iVarType, iCurrentVarIndices)
-    case(1,(floatVarIdx, intVarIdx, boolVarIdx))
-      then ((floatVarIdx+1, intVarIdx, boolVarIdx), floatVarIdx);
-    case(2,(floatVarIdx, intVarIdx, boolVarIdx))
-      then ((floatVarIdx, intVarIdx+1, boolVarIdx), intVarIdx);
-    case(3,(floatVarIdx, intVarIdx, boolVarIdx))
-      then ((floatVarIdx, intVarIdx, boolVarIdx+1), boolVarIdx);
+    case(1,(floatVarIdx, intVarIdx, boolVarIdx, stringVarIdx))
+      then ((floatVarIdx+1, intVarIdx, boolVarIdx, stringVarIdx), floatVarIdx);
+    case(2,(floatVarIdx, intVarIdx, boolVarIdx, stringVarIdx))
+      then ((floatVarIdx, intVarIdx+1, boolVarIdx, stringVarIdx), intVarIdx);
+    case(3,(floatVarIdx, intVarIdx, boolVarIdx, stringVarIdx))
+      then ((floatVarIdx, intVarIdx, boolVarIdx+1, stringVarIdx), boolVarIdx);
+    case(4,(floatVarIdx, intVarIdx, boolVarIdx, stringVarIdx))
+      then ((floatVarIdx, intVarIdx, boolVarIdx, stringVarIdx+1), stringVarIdx);
     else
       equation
         Error.addMessage(Error.INTERNAL_ERROR, {"GetVarToArrayIndexByType with unknown type called."});
@@ -9831,8 +9913,8 @@ algorithm
     ((arrayDimensions,varIndices)) := BaseHashTable.get(varName, iVarToArrayIndexMapping);
     arraySize := arrayLength(varIndices);
 
-    ((concreteVarIndex,_,_)) := List.fold(listReverse(arraySubscripts), getUnrolledArrayIndex, (0, 1, listReverse(arrayDimensions)));
-
+    ((concreteVarIndex,_,_)) := List.fold(arraySubscripts, getUnrolledArrayIndex, (0, 1, arrayDimensions));
+    //print("SimCodeUtil.getVarIndexInfosByMapping: Found variable index for '" + ComponentReference.printComponentRefStr(iVarName) + "'. The value is " + intString(concreteVarIndex) + "\n");
     for arrayIdx in 0:(arraySize-1) loop
       idx := arrayGet(varIndices, arraySize-arrayIdx);
       if(intLt(idx, 0)) then
@@ -9986,6 +10068,8 @@ algorithm
   varCount := varCount + listLength(intAlgVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(boolAlgVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
   varCount := varCount + listLength(boolAlgVars);
+  ((idxSimVarMappingTplList, highestIdx)) := List.fold1(stringAlgVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
+  varCount := varCount + listLength(stringAlgVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(inputVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
   varCount := varCount + listLength(inputVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(outputVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
@@ -9996,12 +10080,16 @@ algorithm
   varCount := varCount + listLength(intAliasVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(boolAliasVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
   varCount := varCount + listLength(boolAliasVars);
+  ((idxSimVarMappingTplList, highestIdx)) := List.fold1(stringAliasVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
+  varCount := varCount + listLength(stringAliasVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(paramVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
   varCount := varCount + listLength(paramVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(intParamVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
   varCount := varCount + listLength(intParamVars);
   ((idxSimVarMappingTplList, highestIdx)) := List.fold1(boolParamVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
   varCount := varCount + listLength(boolParamVars);
+  ((idxSimVarMappingTplList, highestIdx)) := List.fold1(stringParamVars, createAllSCVarMapping0, varCount, (idxSimVarMappingTplList,highestIdx));
+  varCount := varCount + listLength(stringParamVars);
 
   mappingArray := arrayCreate(highestIdx, NONE());
   mappingArray := List.fold(idxSimVarMappingTplList, createAllSCVarMapping1, mappingArray);

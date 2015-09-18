@@ -85,12 +85,12 @@ end EqSys;
 //-------------------------------------------------//
 
 public function partitionLinearTornSystem"checks the EqSystem for tornSystems in order to dissassemble them into various SingleEquation and a reduced EquationSystem.
-This is useful in order to reduce the execution costs of the equationsystem and generate a bunch of parallel singleEquations. use +d=doLienarTearing,partlintornsystem to activate it.
+This is useful in order to reduce the execution costs of the equationsystem and generate a bunch of parallel singleEquations. use +d=doLienarTearing +partlintorn=x to activate it.
 Remark: this is still under development
 
 idea:
 we have the algebraic equations (other equations): g(xa,xt) : 0 = Ag*xt + Bg*xa + cg;
-and the      residual equations                  h(xa,xt,r) : r = Ah*xt + Bh*xt + ch;
+and the      residual equations                  h(xa,xt,r) : r = Ah*xt + Bh*xa + ch;
 and we want something like this:
             new algebraic equations               gs(xa,xt) : xa = B_*xt + dg;
             new residual equations                hs(xt,r)  : r = A_*xt +dh;
@@ -105,7 +105,7 @@ algorithm
       BackendDAE.Shared shared;
     case(BackendDAE.DAE(eqs=eqs,shared=shared))
      equation
-       true = Flags.isSet(Flags.PARTLINTORNSYSTEM);
+       true = intGt(Flags.getConfigInt(Flags.PARTLINTORN),0);
        (eqs,_) = List.map1Fold(eqs,reduceLinearTornSystem,shared,1);
     then BackendDAE.DAE(eqs,shared);
     else daeIn;
@@ -114,7 +114,7 @@ end partitionLinearTornSystem;
 
 
 public function reduceLinearTornSystem  "checks the EqSystem for tornSystems in order to dissassemble them into various SingleEquation and a reduced EquationSystem.
-This is useful in order to reduce the execution costs of the equationsystem and generate a bunch of parallel singleEquations. use +d=doLienarTearing,partlintornsystem to activate it.
+This is useful in order to reduce the execution costs of the equationsystem and generate a bunch of parallel singleEquations. use +d=doLienarTearing +partlintorn=x to activate it.
 Remark: this is still under development
 author:Waurich TUD 2013-09"
   input BackendDAE.EqSystem systIn;
@@ -196,9 +196,9 @@ algorithm
         comp = listGet(compsIn,compIdx);
         BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(tearingvars = tvarIdcs, residualequations = resEqIdcs, otherEqnVarTpl = otherEqnVarTpl), linear = linear) = comp;
         true = linear;
-        true = intLe(listLength(tvarIdcs),3);
+        true = intLe(listLength(tvarIdcs),Flags.getConfigInt(Flags.PARTLINTORN));
         //print("LINEAR TORN SYSTEM OF SIZE "+intString(listLength(tvarIdcs))+"\n");
-        false = compHasDummyState(comp,systIn);
+        //false = compHasDummyState(comp,systIn);
         // build the new components, the new variables and the new equations
         (varsNew,eqsNew,_,resEqs,matchingNew) = reduceLinearTornSystem2(systIn,sharedIn,tvarIdcs,resEqIdcs,otherEqnVarTpl,tornSysIdxIn);
 
@@ -243,8 +243,8 @@ algorithm
         true = listLength(compsIn) >= compIdx;
         comp = listGet(compsIn,compIdx);
         BackendDAE.EQUATIONSYSTEM(vars = varIdcs, eqns = eqIdcs) = comp;
-        true = intLe(listLength(varIdcs),3);
-        false = compHasDummyState(comp,systIn);
+        true = intLe(listLength(varIdcs),2);
+        //false = compHasDummyState(comp,systIn);
 
         //print("EQUATION SYSTEM OF SIZE "+intString(listLength(varIdcs))+"\n");
           //print("Jac:\n" + BackendDump.jacobianString(jac) + "\n");
@@ -296,7 +296,7 @@ algorithm
         ass2All = Array.copy(ass2,ass2All);
         List.map2_0(compsNew,updateAssignmentsByComp,ass1All,ass2All);
         syst.matching = BackendDAE.MATCHING(ass1All, ass2All, compsTmp);
-           //BackendDump.dumpFullMatching(matching);
+           //BackendDump.dumpFullMatching(syst.matching);
 
         //build new DAE-EqSystem
         syst = BackendDAEUtil.setEqSystMatrices(syst);
@@ -1053,6 +1053,9 @@ algorithm
         BackendDAEEXT.getAssignment(ass2, ass1);
         matching = BackendDAE.MATCHING(ass1, ass2, {});
         sysTmp = BackendDAEUtil.createEqSystem(vars, eqArr);
+        (sysTmp,_,_) = BackendDAEUtil.getIncidenceMatrix(sysTmp,BackendDAE.ABSOLUTE(),NONE());
+        sysTmp = BackendDAEUtil.setEqSystMatching(sysTmp, matching);
+
         // perform BLT to order the StrongComponents
         mapIncRowEqn = listArray(List.intRange(nEqs));
         mapEqnIncRow = Array.map(mapIncRowEqn,List.create);
@@ -1546,15 +1549,46 @@ algorithm
   (allTerms,coeffsIn) := foldIn;
   (coeffs,allTerms) := List.extract1OnTrue(allTerms,Expression.expHasCref,cref);
   coeff := List.fold(coeffs,Expression.expAdd,DAE.RCONST(0));
-  if Expression.containFunctioncall(coeff) then
-  //print("This system of equations cannot be decomposed because its actually not linear (the coeffs are function calls of x).\n");
-  fail();
+  if containsFunctioncallOfCref(coeff,cref) then
+    print("This system of equations cannot be decomposed because its actually not linear (the coeffs are function calls of x).\n");
+    fail();
   end if;
   (coeff,_) := Expression.replaceExp(coeff,Expression.crefExp(cref),DAE.RCONST(1.0));
   (coeff,_) := ExpressionSimplify.simplify(coeff);
   foldOut := (allTerms,coeff::coeffsIn);
 end getEqSystem3;
 
+protected function containsFunctioncallOfCref"outputs true if the expIn contains a function call which has cref as input"
+  input DAE.Exp expIn;
+  input DAE.ComponentRef cref;
+  output Boolean hasCrefInCall;
+protected
+  list<DAE.Exp> expLst;
+algorithm
+  if Expression.containFunctioncall(expIn) then
+    (_,expLst) := Expression.traverseExpBottomUp(expIn,getCallExpLst,{});
+    hasCrefInCall := List.fold(List.map1(expLst,Expression.expHasCref,cref),boolOr,false);
+  else
+    hasCrefInCall := false;
+  end if;
+end containsFunctioncallOfCref;
+
+public function getCallExpLst "returns the list of expressions from a call.
+author:Waurich TUD 2015-08"
+  input DAE.Exp eIn;
+  input list<DAE.Exp> eLstIn;
+  output DAE.Exp eOut;
+  output list<DAE.Exp> eLstOut;
+algorithm
+  (eOut,eLstOut) := matchcontinue(eIn,eLstIn)
+    local
+      list<DAE.Exp> expLst;
+    case(DAE.CALL(expLst=expLst),_)
+      then (eIn,listAppend(expLst,eLstIn));
+    else
+      then (eIn,eLstIn);
+  end matchcontinue;
+end getCallExpLst;
 
 protected function getSummands"gets all sum-terms in the equation"
   input BackendDAE.Equation eq;

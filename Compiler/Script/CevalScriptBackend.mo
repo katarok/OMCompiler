@@ -659,7 +659,7 @@ public function cevalInteractiveFunctions3
   output Values.Value outValue;
   output GlobalScript.SymbolTable outInteractiveSymbolTable;
 protected
-  import LexerModelicaDiff.{Token,TokenId,tokenContent,scanString,filterModelicaDiff,modelicaDiffTokenEq};
+  import LexerModelicaDiff.{Token,TokenId,tokenContent,scanString,filterModelicaDiff,modelicaDiffTokenEq,modelicaDiffTokenWhitespace};
   import DiffAlgorithm.{Diff,diff,printActual,printDiffTerminalColor,printDiffXml};
 algorithm
   (outCache,outValue,outInteractiveSymbolTable) := matchcontinue (inCache,inEnv,inFunctionName,inVals,inSt,msg)
@@ -829,14 +829,14 @@ algorithm
       algorithm
         tokens1 := scanString(s1);
         tokens2 := scanString(s2);
-        diffs := diff(tokens1, tokens2, modelicaDiffTokenEq);
+        diffs := diff(tokens1, tokens2, modelicaDiffTokenEq, modelicaDiffTokenWhitespace, tokenContent);
         // print("Before filtering:\n"+printDiffTerminalColor(diffs, tokenContent)+"\n");
         diffs := filterModelicaDiff(diffs,removeWhitespace=false);
         // Scan a second time, with comments filtered into place
         str := printActual(diffs, tokenContent);
         // print("Intermediate string:\n"+printDiffTerminalColor(diffs, tokenContent)+"\n");
         tokens2 := scanString(str);
-        diffs := diff(tokens1, tokens2, modelicaDiffTokenEq);
+        diffs := diff(tokens1, tokens2, modelicaDiffTokenEq, modelicaDiffTokenWhitespace, tokenContent);
         // print("Before filtering (2):\n"+printDiffTerminalColor(diffs, tokenContent)+"\n");
         diffs := filterModelicaDiff(diffs);
         str := match Absyn.pathLastIdent(path)
@@ -1569,6 +1569,16 @@ algorithm
       then
         (cache,Values.BOOL(false),st);
 
+    case (cache,_,"getInheritedClasses",{Values.CODE(Absyn.C_TYPENAME(classpath))},st as GlobalScript.SYMBOLTABLE(ast=p),_)
+      equation
+        paths = Interactive.getInheritedClasses(classpath, st);
+        vals = List.map(paths,ValuesUtil.makeCodeTypeName);
+      then
+        (cache,ValuesUtil.makeArray(vals),st);
+
+    case (cache,_,"getInheritedClasses",_,st as GlobalScript.SYMBOLTABLE(),_)
+      then (cache,ValuesUtil.makeArray({}),st);
+
     case (cache,_,"getComponentsTest",{Values.CODE(Absyn.C_TYPENAME(classpath))},st as GlobalScript.SYMBOLTABLE(ast=p),_)
       equation
         absynClass = Interactive.getPathedClassInProgram(classpath, p);
@@ -2168,8 +2178,6 @@ algorithm
         },
         st,_)
       equation
-        // get the variables
-        str = ValuesUtil.printCodeVariableName(cvar) + "\" \"" + ValuesUtil.printCodeVariableName(cvar2);
         // get OPENMODELICAHOME
         omhome = Settings.getInstallationDirectoryPath();
         // get the simulation filename
@@ -2182,6 +2190,8 @@ algorithm
         // check if plot callback is defined
         b = System.plotCallBackDefined();
         if boolOr(forceOMPlot, boolNot(b)) then
+          // get the variables
+          str = ValuesUtil.printCodeVariableName(cvar) + "\" \"" + ValuesUtil.printCodeVariableName(cvar2);
           // create the path till OMPlot
           str2 = stringAppendList({omhome,pd,"bin",pd,"OMPlot",s1});
           // create the list of arguments for OMPlot
@@ -2189,6 +2199,8 @@ algorithm
           call = stringAppendList({"\"",str2,"\""," ",str3});
           0 = System.spawnCall(str2, call);
         elseif b then
+          // get the variables
+          str = ValuesUtil.printCodeVariableName(cvar) + " " + ValuesUtil.printCodeVariableName(cvar2);
           logXStr = boolString(logX);
           logYStr = boolString(logY);
           x1Str = realString(x1);

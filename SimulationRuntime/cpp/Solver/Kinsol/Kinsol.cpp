@@ -50,7 +50,7 @@ int kin_DlsDenseJacFn(long int N, N_Vector u, N_Vector fu,DlsMat J, void *user_d
 /**\Callback function for Kinsol to calculate right hand side, calls internal Kinsol member function
  *  \param [in] y variables vector
  *  \param [in] fval right hand side vecotre
- *  \param [in] user_data user date pointer is used to acces Kinsol instance
+ *  \param [in] user_data user data pointer is used to access Kinsol instance
  *  \return status value
  */
 int kin_fCallback(N_Vector y,N_Vector fval, void *user_data)
@@ -301,7 +301,7 @@ void Kinsol::initialize()
 			_iterationStatus = SOLVERERROR;
 		}
 	}
-	Logger::write("Kinsol: initialized",LC_NLS,LL_DEBUG);
+	LOGGER_WRITE("Kinsol: initialized",LC_NLS,LL_DEBUG);
 }
 
 
@@ -397,7 +397,7 @@ void Kinsol::solve()
 		{
 			dgetc2_(&_dimSys, _jac, &_dimSys, _ihelpArray, _jhelpArray, &irtrn);
 			dgesc2_(&_dimSys, _jac, &_dimSys, _f, _ihelpArray, _jhelpArray, _scale);
-			Logger::write("Kinsol: Linear system singular, using perturbed system matrix.", LC_NLS, LL_DEBUG);
+			LOGGER_WRITE("Kinsol: Linear system singular, using perturbed system matrix.", LC_NLS, LL_DEBUG);
 			_iterationStatus = DONE;
 		}
 		else
@@ -588,7 +588,7 @@ void Kinsol::solve()
       {
         if(!_solverErrorNotificationGiven)
         {
-          Logger::write("Kinsol: Solver error detected. The simulation will continue, but the results may be incorrect.",LC_NLS,LL_WARNING);
+          LOGGER_WRITE("Kinsol: Solver error detected. The simulation will continue, but the results may be incorrect.",LC_NLS,LL_WARNING);
           _solverErrorNotificationGiven = true;
         }
       }

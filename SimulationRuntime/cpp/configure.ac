@@ -25,17 +25,20 @@ SCOREP_HOME=""
 FMU_KINSOL="no"
 PARALLEL_OUTPUT="no"
 LOGGER="yes"
-CMAKE_COMMANDS="CC=\"${CC}\" CXX=\"${CXX}\" CFLAGS=\"${CFLAGS}\" CXXFLAGS=\"${CXXFLAGS}\""
+#CMAKE_COMMANDS="CC=\"${CC}\" CXX=\"${CXX}\" CFLAGS=\"${CFLAGS}\" CXXFLAGS=\"${CXXFLAGS}\""
+CMAKE_COMMANDS="CC=\"${CC}\" CXX=\"${CXX}\""
+CMAKE_BUILDTYPE="RelWithDebInfo"
 
 AC_SUBST(BOOST_STATIC_LINKING_COMMAND)
 AC_SUBST(BOOST_REALPATHS_COMMAND)
 AC_SUBST(RUNTIME_PROFILING_COMMAND)
 AC_SUBST(SCOREP_COMMAND)
 AC_SUBST(SCOREP_HOME)
-AC_SUBST(FMU_KINSOL_COMMAND)
+AC_SUBST(FMU_SUNDIALS_COMMAND)
 AC_SUBST(PARALLEL_OUTPUT_COMMAND)
 AC_SUBST(LOGGER_COMMAND)
 AC_SUBST(CMAKE_COMMANDS)
+AC_SUBST(CMAKE_BUILDTYPE)
 
 evaluateParameter() {
   case $1 in
@@ -45,9 +48,11 @@ evaluateParameter() {
     SCOREP) SCOREP="yes" ;;
     SCOREP_HOME=?*) SCOREP_HOME=`echo $1| cut -d'=' -f 2` ;;
     SCOREP_HOME=) ;;
-    FMU_KINSOL) FMU_KINSOL="yes" ;;
+    FMU_SUNDIALS) FMU_SUNDIALS="yes" ;;
     PARALLEL_OUTPUT) PARALLEL_OUTPUT="yes" ;;
     DISABLE_LOGGER) LOGGER="no" ;;
+    BUILD_TYPE=?*) CMAKE_BUILDTYPE=`echo $1| cut -d'=' -f 2` ;;
+    BUILD_TYPE=) ;;
     *) echo "Unknown Parameter given $1" ;;
   esac
 }
@@ -107,14 +112,14 @@ fi
 AC_ARG_WITH(scorep-home,  [  --with-scorep-home=[path]       (set the home directory of scorep)],[SCOREP_HOME="$withval"],[])
 AC_MSG_RESULT([ScoreP-home is set to $SCOREP_HOME])
 
-AC_ARG_WITH(cppruntimeFmuKinsol,  [  --with-fmu-kinsol       (enable kinsol solver in FMUs)],[FMU_KINSOL="$withval"],[])
+AC_ARG_WITH(cppruntimeFmuSundials,  [  --with-fmu-sundials       (enable sundials solver in FMUs)],[FMU_SUNDIALS="$withval"],[])
 
-AC_MSG_CHECKING([if kinsol for FMUs is requested])
-if test "$FMU_KINSOL" = "yes"; then
-  FMU_KINSOL_COMMAND="-DFMU_KINSOL=ON"
+AC_MSG_CHECKING([if sundials for FMUs is requested])
+if test "$FMU_SUNDIALS" = "yes"; then
+  FMU_SUNDIALS_COMMAND="-DFMU_SUNDIALS=ON"
   AC_MSG_RESULT([yes])
 else
-  FMU_KINSOL_COMMAND="-DFMU_KINSOL=OFF"
+  FMU_SUNDIALS_COMMAND="-DFMU_SUNDIALS=OFF"
   AC_MSG_RESULT([no])
 fi
 
@@ -139,5 +144,8 @@ else
   LOGGER_COMMAND="-DUSE_LOGGER=OFF"
   AC_MSG_RESULT([no])
 fi
+
+AC_ARG_WITH(build-type,  [  --with-build-type=[Release|Debug|RelWithDebInfo]       (set the cmake build type)],[CMAKE_BUILDTYPE="$withval"],[])
+AC_MSG_RESULT([Build type is set to $CMAKE_BUILDTYPE])
 
 AC_OUTPUT(Makefile)

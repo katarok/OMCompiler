@@ -41,14 +41,18 @@ typedef struct RATIONAL {
   long n;
 } RATIONAL;
 
+RATIONAL makeRATIONAL(long a, long b);
 RATIONAL addInt2Rat(long a, RATIONAL b);
 RATIONAL subInt2Rat(long a, RATIONAL b);
 RATIONAL addRat2Rat(RATIONAL a, RATIONAL b);
 RATIONAL multRat2Rat(RATIONAL a, RATIONAL b);
+RATIONAL divRat2Rat(RATIONAL a, RATIONAL b);
 RATIONAL multInt2Rat(long a, RATIONAL b);
 double rat2Real(RATIONAL a);
-double ceilRat(RATIONAL a, int strict);
-double floorRat(RATIONAL a, int strict);
+long ceilRat(RATIONAL a);
+long ceilRatStrict(RATIONAL a);
+long floorRat(RATIONAL a);
+long floorRatStrict(RATIONAL a);
 
 #ifdef __cplusplus
 }

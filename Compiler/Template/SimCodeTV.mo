@@ -199,7 +199,7 @@ package SimCodeVar
       list<SimVar> jacobianVars;
       list<SimVar> realOptimizeConstraintsVars;
       list<SimVar> realOptimizeFinalConstraintsVars;
-      list<SimCodeVar.SimVar> mixedArrayVars;
+      list<SimVar> mixedArrayVars;
     end SIMVARS;
   end SimVars;
 
@@ -314,6 +314,7 @@ package SimCode
 
   uniontype SubPartition
     record SUBPARTITION
+      list<tuple<SimCodeVar.SimVar, Boolean>> vars;
       list<SimEqSystem> equations;
       list<SimEqSystem> removedEquations;
       BackendDAE.SubClock subClock;
@@ -932,6 +933,11 @@ package SimCodeFunctionUtil
     input SimCode.Function fn;
     output Boolean b;
   end isBoxedFunction;
+
+  function funcHasParallelInOutArrays
+    input SimCode.Function fn;
+    output Boolean b;
+  end funcHasParallelInOutArrays;
 
   function incrementInt
     input Integer inInt;
@@ -2058,7 +2064,8 @@ package DAE
   end Subscript;
 
   uniontype MatchType
-    record MATCHCONTINUE end MATCHCONTINUE;
+  record MATCHCONTINUE end MATCHCONTINUE;
+  record TRY_STACKOVERFLOW end TRY_STACKOVERFLOW;
     record MATCH
       Option<tuple<Integer,Type,Integer>> switch;
     end MATCH;
@@ -3093,6 +3100,10 @@ package ExpressionDump
     input DAE.Exp e;
     output String s;
   end printCrefsFromExpStr;
+  function binopSymbol
+    input DAE.Operator inOperator;
+    output String outString;
+  end binopSymbol;
 end ExpressionDump;
 
 package Config
@@ -3305,6 +3316,10 @@ package Types
     input DAE.Type ty;
     output list<DAE.Var> fields;
   end getMetaRecordFields;
+  function unboxedType
+    input DAE.Type boxedType;
+    output DAE.Type ty;
+  end unboxedType;
 end Types;
 
 package HashTableCrIListArray

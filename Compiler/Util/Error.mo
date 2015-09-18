@@ -70,6 +70,10 @@ encapsulated package Error
 public import Util;
 public import Flags;
 
+protected
+
+import Config;
+
 public
 uniontype Severity "severity of message"
   record INTERNAL "Error because of a failure in the tool" end INTERNAL;
@@ -728,7 +732,7 @@ public constant Message WARNING_JACOBIAN_EQUATION_SOLVE = MESSAGE(523, SYMBOLIC(
 public constant Message SIMPLIFICATION_COMPLEXITY = MESSAGE(523, SYMBOLIC(), NOTIFICATION(),
   Util.gettext("Simplification produced a higher complexity (%s) than the original (%s). The simplification was: %s => %s."));
 public constant Message ITERATOR_NON_ARRAY = MESSAGE(524, TRANSLATION(), ERROR(),
-  Util.gettext("Iterator %s, has type %s, but expected an array expression."));
+  Util.gettext("Iterator %s, has type %s, but expected a 1D array expression."));
 public constant Message INST_INVALID_RESTRICTION = MESSAGE(525, TRANSLATION(), ERROR(),
   Util.gettext("Cannot instantiate %s due to class specialization %s."));
 public constant Message INST_NON_LOADED = MESSAGE(526, TRANSLATION(), WARNING(),
@@ -778,7 +782,7 @@ public constant Message NON_STANDARD_OPERATOR = MESSAGE(547, TRANSLATION(), WARN
 public constant Message CONNECT_ARRAY_SIZE_ZERO = MESSAGE(548, TRANSLATION(), WARNING(),
   Util.gettext("Ignoring connection of array components having size zero: %s and %s."));
 public constant Message ILLEGAL_RECORD_COMPONENT = MESSAGE(549, TRANSLATION(), ERROR(),
-  Util.gettext("Ignoring record component:\n%swhen building record the constructor. Records are allowed to contain only components of basic types, arrays of basic types or other records."));
+  Util.gettext("Ignoring record component:\n%swhen building the record constructor. Records are allowed to contain only components of basic types, arrays of basic types or other records."));
 public constant Message EQ_WITHOUT_TIME_DEP_VARS = MESSAGE(550, SYMBOLIC(), ERROR(),
   Util.gettext("Found equation without time-dependent variables: %s = %s"));
 public constant Message OVERCONSTRAINED_OPERATOR_SIZE_ZERO = MESSAGE(551, TRANSLATION(), WARNING(),
@@ -1279,8 +1283,15 @@ public function addInternalError "
   Used to make an internal error"
   input String message;
   input SourceInfo info;
+protected
+  String filename;
 algorithm
-  addSourceMessage(INTERNAL_ERROR, {message}, info);
+  if Config.getRunningTestsuite() then
+    SOURCEINFO(fileName=filename):=info;
+    addSourceMessage(INTERNAL_ERROR, {message}, SOURCEINFO(filename,false,0,0,0,0,0));
+  else
+    addSourceMessage(INTERNAL_ERROR, {message}, info);
+  end if;
 end addInternalError;
 
 annotation(__OpenModelica_Interface="util");

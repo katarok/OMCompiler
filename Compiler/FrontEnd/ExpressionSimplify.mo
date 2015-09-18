@@ -276,8 +276,10 @@ protected function simplifyAsubExp
 algorithm
   outExp := matchcontinue (origExp,inExp,inSubs)
     local
+      Integer sub;
       DAE.Type tp;
       DAE.Exp e;
+      list<DAE.Exp> eLst;
     // ASUB(CAST(e)) -> CAST(liftArray(t), ASUB(e))
     case (_, DAE.CAST(tp,e), _)
       equation
@@ -285,8 +287,15 @@ algorithm
         e = DAE.CAST(tp, DAE.ASUB(e, inSubs));
       then e;
 
+    // Simplify asubs which result from function calls
+    case (_, DAE.TUPLE(PR=eLst), {DAE.ICONST(sub)})
+      equation
+        true = sub<=listLength(eLst);
+      then listGet(eLst,sub);
+
     // Simplify asubs where some of the subscripts are slices.
     case (_, _, _)
+      equation
       then simplifyAsubSlicing(inExp, inSubs);
 
     // other subscripting/asub simplifications where e is not simplified first.
@@ -309,8 +318,9 @@ algorithm
       DAE.CallAttributes attr;
       DAE.Type tp;
       Boolean b2;
+      Real r1,r2;
       String idn;
-      Integer n;
+      Integer n,i1,i2;
 
     // homotopy(e, e) => e
     case DAE.CALL(path=Absyn.IDENT("homotopy"),expLst={e1,e2})
@@ -414,6 +424,18 @@ algorithm
       then e;
     case (DAE.CALL(path=Absyn.IDENT("atan"),expLst={DAE.CALL(path=Absyn.IDENT("tan"),expLst={e})}))
       then e;
+    // modulo for real values
+    case (DAE.CALL(path=Absyn.IDENT("mod"),expLst={DAE.RCONST(r1),DAE.RCONST(r2)}))
+      equation
+      then DAE.RCONST(r1-floor(r1/r2)*r2);
+    // modulo for integer values
+    case (DAE.CALL(path=Absyn.IDENT("mod"),expLst={DAE.ICONST(i1),DAE.ICONST(i2)}))
+      equation
+      then DAE.ICONST(realInt(intReal(i1)-floor(intReal(i1)/intReal(i2))*intReal(i2)));
+    // integer call
+    case (DAE.CALL(path=Absyn.IDENT("integer"),expLst={DAE.RCONST(r1)}))
+      equation
+      then DAE.ICONST(realInt(r1));
     // sin(acos(e)) = sqrt(1-e^2)
     case (DAE.CALL(path=Absyn.IDENT("sin"),expLst={DAE.CALL(path=Absyn.IDENT("acos"),expLst={e})}))
       then Expression.makePureBuiltinCall("sqrt",{DAE.BINARY(DAE.RCONST(1),DAE.SUB(DAE.T_REAL_DEFAULT),DAE.BINARY(e,DAE.MUL(DAE.T_REAL_DEFAULT),e))},DAE.T_REAL_DEFAULT);
@@ -434,7 +456,11 @@ algorithm
      then DAE.BINARY(DAE.RCONST(1.570796326794896619231321691639751442),DAE.MUL(DAE.T_REAL_DEFAULT),e);
     // atan2(0,x) = 0
     case (DAE.CALL(path=Absyn.IDENT("atan2"),expLst={e1 as DAE.RCONST(0.0),_}))
+      equation
       then e1;
+    case (DAE.CALL(path=Absyn.IDENT("atan2"), expLst={DAE.RCONST(r1),DAE.RCONST(r2)}))
+      equation
+      then DAE.RCONST(atan2(r1,r2));
     // abs(-x) = abs(x)
     case(DAE.CALL(path=Absyn.IDENT("abs"),expLst={DAE.UNARY(operator = DAE.UMINUS(ty = tp),exp = e1)}))
       equation

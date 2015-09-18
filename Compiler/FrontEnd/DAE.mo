@@ -464,7 +464,6 @@ uniontype VariableAttributes
     Option<Exp> startOrigin "where did start=X came from? NONE()|SOME(DAE.SCONST binding|type|undefined)";
   end VAR_ATTR_BOOL;
 
-  // BTH
   record VAR_ATTR_CLOCK
     Option<Boolean> isProtected;
     Option<Boolean> finalPrefix;
@@ -1235,7 +1234,6 @@ uniontype Mod "Modification"
 end Mod;
 
 
-// BTH
 public
 uniontype ClockKind
   record INFERRED_CLOCK
@@ -1293,7 +1291,6 @@ uniontype Exp "Expressions
     Boolean bool "Bool constants" ;
   end BCONST;
 
-  // BTH
   record CLKCONST
     ClockKind clk "Clock constants" ;
   end CLKCONST;
@@ -1580,6 +1577,7 @@ end MatchCase;
 
 public uniontype MatchType
   record MATCHCONTINUE end MATCHCONTINUE;
+  record TRY_STACKOVERFLOW end TRY_STACKOVERFLOW;
   record MATCH
     Option<tuple<Integer,Type,Integer>> switch "The index of the pattern to switch over, its type and the value to divide string hashes with";
   end MATCH;

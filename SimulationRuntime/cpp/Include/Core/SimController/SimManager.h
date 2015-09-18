@@ -5,8 +5,8 @@
  */
 #include <Core/SimController/Configuration.h>
 #include <Core/SimController/Initialization.h>
-#include <Core/SimController/FactoryExport.h>
-#include <Core/Utils/extension/logger.hpp>
+//#include <Core/SimController/FactoryExport.h>
+//#include <Core/Utils/extension/logger.hpp>
 
 #ifdef RUNTIME_PROFILING
 #include <Core/Utils/extension/measure_time.hpp>
@@ -38,14 +38,11 @@ private:
     boost::shared_ptr<ISolver>                        _solver;            ///< - Solver
     int                                               _dimtimeevent,      ///< Temp - Timeevent-Dimensionen-Array
                                                       _dimZeroFunc;       ///< - Number of zero functions
-    int*                                              _timeeventcounter;  ///< Temp - Timeevent-Counter-Array
-    int                                               _totStps,           ///< Output - Anzahl Steps der Prozesse
-                                                      _accStps,           ///< Output - Anzahl akzeptierte Steps der Prozesse
-                                                      _rejStps,           ///< Output - Anzahl verworfene steps der Prozesse
-                                                      _cycleCounter,
+    int*                                              _timeEventCounter;  ///< Temp - Timeevent-Counter-Array
+    int                                               _cycleCounter,
                                                       _resetCycle;
     ISolver::SOLVERCALL                               _solverTask;        ///< Temporary - Beschreibt die Aufgabe mit der der Solver aufgerufen wird
-    int                                               _idid;              ///< Output - DebugID
+    int                                               _dbgId;              ///< Output - DebugID
     bool                                              _continueSimulation,///< - Flag für Endlossimulation (wird gesetzt, wenn Solver zurückkehrt)
                                                       _writeFinalState;   ///< Temporary - Ist am Ende noch ein Time-Event???
     bool*                                             _events;            ///< - Vector (of dimension _dimZeroF) indicating which zero function caused an event
@@ -64,7 +61,7 @@ private:
     int* _sampleCycles;
 
     #ifdef RUNTIME_PROFILING
-    std::vector<MeasureTimeData> measureTimeFunctionsArray;
+    std::vector<MeasureTimeData*> *measureTimeFunctionsArray;
     MeasureTimeValues *runSimStartValues, *runSimEndValues, *initSimStartValues, *initSimEndValues;
     #endif
 };

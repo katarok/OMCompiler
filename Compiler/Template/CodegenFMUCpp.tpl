@@ -68,16 +68,18 @@ case SIMCODE(modelInfo=modelInfo as MODELINFO(__)) then
   let stateDerVectorName = "__zDot"
   let &extraFuncs = buffer "" /*BUFD*/
   let &extraFuncsDecl = buffer "" /*BUFD*/
+  let &complexStartExpressions = buffer ""
 
   let numRealVars = numRealvars(modelInfo)
   let numIntVars = numIntvars(modelInfo)
   let numBoolVars = numBoolvars(modelInfo)
+  let numStringVars = numStringvars(modelInfo)
 
   let cpp = CodegenCpp.translateModel(simCode)
   let()= textFile(fmuWriteOutputHeaderFile(simCode , &extraFuncs , &extraFuncsDecl, ""),'OMCpp<%fileNamePrefix%>WriteOutput.h')
   let()= textFile(fmuModelHeaderFile(simCode, extraFuncs, extraFuncsDecl, "",guid, FMUVersion), 'OMCpp<%fileNamePrefix%>FMU.h')
   let()= textFile(fmuModelCppFile(simCode, extraFuncs, extraFuncsDecl, "",guid, FMUVersion), 'OMCpp<%fileNamePrefix%>FMU.cpp')
-  let()= textFile((if isFMIVersion20(FMUVersion) then fmuModelDescriptionFileCpp(simCode, extraFuncs, extraFuncsDecl, "", guid, FMUVersion, FMUType) else CodegenCppInit.modelInitXMLFile(simCode, numRealVars, numIntVars, numBoolVars, FMUVersion, FMUType, guid, true, "cpp-runtime")), 'modelDescription.xml')
+  let()= textFile((if isFMIVersion20(FMUVersion) then fmuModelDescriptionFileCpp(simCode, extraFuncs, extraFuncsDecl, "", guid, FMUVersion, FMUType) else CodegenCppInit.modelInitXMLFile(simCode, numRealVars, numIntVars, numBoolVars, numStringVars, FMUVersion, FMUType, guid, true, "cpp-runtime", complexStartExpressions, stateDerVectorName)), 'modelDescription.xml')
   let()= textFile(fmudeffile(simCode, FMUVersion), '<%fileNamePrefix%>.def')
   let()= textFile(fmuMakefile(target,simCode, extraFuncs, extraFuncsDecl, "", FMUVersion, "", "", "", ""), '<%fileNamePrefix%>_FMU.makefile')
   let()= textFile(fmuCalcHelperMainfile(simCode), 'OMCpp<%fileNamePrefix%>CalcHelperMain.cpp')
@@ -100,6 +102,7 @@ template fmuCalcHelperMainfile(SimCode simCode)
     #include <Core/Modelica.h>
     #include <Core/System/FactoryExport.h>
     #include <Core/DataExchange/SimData.h>
+    #include <Core/DataExchange/XmlPropertyReader.h>
     #include <Core/System/SimVars.h>
     #include <Core/System/DiscreteEvents.h>
     #include <Core/System/EventHandling.h>
@@ -119,9 +122,13 @@ template fmuCalcHelperMainfile(SimCode simCode)
     #include "OMCpp<%fileNamePrefix%>FactoryExport.cpp"
     #include "OMCpp<%fileNamePrefix%>Extension.cpp"
     #include "OMCpp<%fileNamePrefix%>Functions.cpp"
+    <%if(Flags.isSet(Flags.GEN_DEBUG_SYMBOLS)) then
+    <<
     #include "OMCpp<%fileNamePrefix%>InitializeParameter.cpp"
     #include "OMCpp<%fileNamePrefix%>InitializeAlgVars.cpp"
     #include "OMCpp<%fileNamePrefix%>InitializeAliasVars.cpp"
+    >>
+    %>
     #include "OMCpp<%fileNamePrefix%>InitializeExtVars.cpp"
     #include "OMCpp<%fileNamePrefix%>Initialize.cpp"
     #include "OMCpp<%fileNamePrefix%>Jacobian.cpp"
@@ -257,7 +264,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
   #include <sstream>
 
   ISimVars *<%modelShortName%>FMU::createSimVars() {
-    return new SimVars(<%numRealvars(modelInfo)%>, <%numIntvars(modelInfo)%>, <%numBoolvars(modelInfo)%>, <%getPreVarsCount(modelInfo)%>, <%numStatevars(modelInfo)%>, <%numStateVarIndex(modelInfo)%>);
+    return new SimVars(<%numRealvars(modelInfo)%>, <%numIntvars(modelInfo)%>, <%numBoolvars(modelInfo)%>, <%numStringvars(modelInfo)%>, <%getPreVarsCount(modelInfo)%>, <%numStatevars(modelInfo)%>, <%numStateVarIndex(modelInfo)%>);
   }
 
   // constructor
@@ -734,13 +741,12 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   CFLAGS_BASED_ON_INIT_FILE=<%extraCflags%>
 
   FMU_CFLAGS=$(SYSTEM_CFLAGS:-O0=$(SIM_OR_DYNLOAD_OPT_LEVEL))
-  CFLAGS=$(CFLAGS_BASED_ON_INIT_FILE) -Winvalid-pch $(FMU_CFLAGS) -DRUNTIME_STATIC_LINKING -I"$(OMHOME)/include/omc/cpp" -I"$(UMFPACK_INCLUDE)" -I"$(BOOST_INCLUDE)" <%makefileParams.includes ; separator=" "%> <%additionalCFlags_GCC%>
+  CFLAGS=$(CFLAGS_BASED_ON_INIT_FILE) -Winvalid-pch $(FMU_CFLAGS) -DRUNTIME_STATIC_LINKING -I"$(OMHOME)/include/omc/cpp" -I"$(UMFPACK_INCLUDE)" -I"$(SUNDIALS_INCLUDE)" -I"$(BOOST_INCLUDE)" <%makefileParams.includes ; separator=" "%> <%additionalCFlags_GCC%>
 
   ifeq ($(USE_LOGGER),ON)
   $(eval CFLAGS=$(CFLAGS) -DUSE_LOGGER)
   endif
 
-  CPPFLAGS = $(CFLAGS)
   LDFLAGS=-L"$(OMHOME)/lib/<%getTriple()%>/omc/cpp" -L"$(BOOST_LIBS)" <%additionalLinkerFlags_GCC%>
   PLATFORM="<%platformstr%>"
 
@@ -748,11 +754,14 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
 
   # CVode can be used for Co-Simulation FMUs, Kinsol is available to handle non linear equation systems
   OMCPP_SOLVER_LIBS=-lOMCppNewton_static
-  ifeq ($(USE_FMU_KINSOL),ON)
+  ifeq ($(USE_FMU_SUNDIALS),ON)
   $(eval OMCPP_SOLVER_LIBS=$(OMCPP_SOLVER_LIBS) -lOMCppKinsol_static $(SUNDIALS_LIBRARIES))
+  $(eval CFLAGS=-DENABLE_SUNDIALS_STATIC $(CFLAGS))
   endif
 
-  OMCPP_LIBS=-Wl,--start-group -lOMCppOMCFactory_FMU_static -lOMCppSystem_static -lOMCppSimController_static -Wl,--end-group -lOMCppDataExchange_static -lOMCppSimulationSettings_static $(OMCPP_SOLVER_LIBS) -lOMCppSolver_static -lOMCppMath_static -lOMCppModelicaUtilities_static -lOMCppExtensionUtilities_static -lOMCppFMU_static
+  CPPFLAGS = $(CFLAGS)
+
+  OMCPP_LIBS=-Wl,--start-group -lOMCppOMCFactory_FMU_static -lOMCppSystem_FMU_static -lOMCppSimController_FMU_static -Wl,--end-group -lOMCppDataExchange_static -lOMCppSimulationSettings_static $(OMCPP_SOLVER_LIBS) -lOMCppSolver_static -lOMCppMath_static -lOMCppModelicaUtilities_static -lOMCppExtensionUtilities_static -lOMCppFMU_static
   MODELICA_EXTERNAL_LIBS=-lModelicaExternalC -lModelicaStandardTables -L$(LAPACK_LIBS) $(LAPACK_LIBRARIES)
   BOOST_LIBRARIES = -l$(BOOST_SYSTEM_LIB) -l$(BOOST_FILESYSTEM_LIB) -l$(BOOST_PROGRAM_OPTIONS_LIB)
   LIBS= $(OMCPP_LIBS) $(MODELICA_EXTERNAL_LIBS) $(BASE_LIB) $(BOOST_LIBRARIES)
@@ -767,14 +776,14 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   <%\t%>rm -rf binaries
   <%\t%><%mkdir%> -p "binaries/$(PLATFORM)"
   <%\t%>cp <%fileNamePrefix%>$(DLLEXT) "binaries/$(PLATFORM)/"
-  ifeq ($(USE_FMU_KINSOL),ON)
+  ifeq ($(USE_FMU_SUNDIALS),ON)
   <%\t%>rm -rf documentation
   <%\t%><%mkdir%> -p "documentation"
   <%\t%>cp $(SUNDIALS_LIBRARIES_KINSOL) "binaries/$(PLATFORM)/"
   <%\t%>cp $(OMHOME)/share/omc/runtime/cpp/licenses/sundials.license "documentation/"
   endif
   <%\t%>rm -f <%modelName%>.fmu
-  ifeq ($(USE_FMU_KINSOL),ON)
+  ifeq ($(USE_FMU_SUNDIALS),ON)
   <%\t%>zip -r "<%modelName%>.fmu" modelDescription.xml binaries documentation
   <%\t%>rm -rf documentation
   else

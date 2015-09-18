@@ -6,15 +6,20 @@
 #include <Core/Modelica.h>
 
 #include <Core/System/FactoryExport.h>
+#include <Core/Utils/extension/logger.hpp>
 #include <Core/System/EventHandling.h>
 #include <Core/System/SystemDefaultImplementation.h>
 #include <Core/System/AlgLoopSolverFactory.h>
 
 
 template <class T>
-void InitVars<T>::setStartValue(T& variable,T val)
+void InitVars<T>::setStartValue(T& variable,T val,bool overwriteOldValue)
 {
-  _start_values[&variable] = val;
+  //only add a start value if it was not already defined
+  if(!_start_values.count(&variable) || overwriteOldValue)
+    _start_values[&variable] = val;
+  else
+    LOGGER_WRITE("SystemDefaultImplementation: start value for variable is already defined",LC_INIT,LL_DEBUG);
 };
 
 template <class T>
@@ -47,6 +52,7 @@ SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *global
   , _dimTimeEvent      (0)
   , _dimAE        (0)
   , _time_event_counter  (NULL)
+  , _outputStream(NULL)
   , _callType        (IContinuous::UNDEF_UPDATE)
   , _initial        (false)
   , _delay_max      (0.0)
@@ -54,6 +60,8 @@ SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *global
   , _terminal        (false)
   , _terminate      (false)
   , _global_settings    (globalSettings)
+  ,_conditions0(NULL)
+  ,_event_system(NULL)
 {
 }
 
@@ -73,6 +81,7 @@ SystemDefaultImplementation::SystemDefaultImplementation(SystemDefaultImplementa
   , _dimTimeEvent      (0)
   , _dimAE        (0)
   , _time_event_counter  (NULL)
+  , _outputStream(NULL)
   , _callType        (IContinuous::UNDEF_UPDATE)
   , _initial        (false)
   , _delay_max      (0.0)
@@ -109,6 +118,8 @@ SystemDefaultImplementation::~SystemDefaultImplementation()
   if(_conditions) delete [] _conditions ;
   if(_time_conditions) delete [] _time_conditions ;
   if(_time_event_counter) delete [] _time_event_counter;
+  if(_conditions0) delete [] _conditions0;
+
 }
 
 void SystemDefaultImplementation::Assert(bool cond,const string& msg)
@@ -179,11 +190,12 @@ void SystemDefaultImplementation::initialize()
   if(_dimZeroFunc > 0)
   {
     if(_conditions) delete [] _conditions ;
-
+    if(_conditions0) delete [] _conditions0 ;
     _conditions = new bool[_dimZeroFunc];
+    _conditions0= new bool[_dimZeroFunc];
 
     memset(_conditions,false,(_dimZeroFunc)*sizeof(bool));
-
+	_event_system = dynamic_cast<IEvent*>(this);
   }
   if(_dimTimeEvent > 0)
   {
@@ -200,6 +212,8 @@ void SystemDefaultImplementation::initialize()
   _start_time = 0.0;
   _terminal = false;
   _terminate = false;
+
+
 };
 
 
@@ -275,24 +289,18 @@ boost::shared_ptr<ISimData> SystemDefaultImplementation::getSimData()
 
 bool SystemDefaultImplementation::isConsistent()
 {
-  if(IEvent* system = dynamic_cast<IEvent*>(this))
+  if(_dimZeroFunc > 0)
   {
-    unsigned int dim = system->getDimZeroFunc();
-    bool* conditions0 = new bool[dim];
-    bool* conditions1 = new bool[dim];
-    getConditions(conditions0);
+     getConditions(_conditions0);
     IContinuous::UPDATETYPE pre_call_type=_callType;
     _callType = IContinuous::DISCRETE;
-    for(int i=0;i<dim;i++)
+    for(int i=0;i<_dimZeroFunc;i++)
     {
-      system->getCondition(i);
+      _event_system->getCondition(i);
     }
-    getConditions(conditions1);
-    bool isConsistent =  std::equal (conditions1, conditions1+_dimZeroFunc,conditions0);
+    bool isConsistent =  std::equal (_conditions, _conditions+_dimZeroFunc,_conditions0);
     _callType = pre_call_type;
-    setConditions(conditions0);
-    delete[] conditions0;
-    delete[] conditions1;
+    setConditions(_conditions0);
     return isConsistent;
   }
   else
@@ -517,27 +525,49 @@ string& SystemDefaultImplementation::getStringStartValue(string& var)
 {
   return _string_start_values.getGetStartValue(var);
 }
+
 void SystemDefaultImplementation::setRealStartValue(double& var,double val)
 {
+  setRealStartValue(var,val,false);
+}
+
+void SystemDefaultImplementation::setRealStartValue(double& var,double val,bool overwriteOldValue)
+{
   var=val;
-  _real_start_values.setStartValue(var,val);
+  _real_start_values.setStartValue(var,val,overwriteOldValue);
 }
 
 void SystemDefaultImplementation::setBoolStartValue(bool& var,bool val)
 {
+  setBoolStartValue(var,val,false);
+}
+
+void SystemDefaultImplementation::setBoolStartValue(bool& var,bool val,bool overwriteOldValue)
+{
   var=val;
-  _bool_start_values.setStartValue(var,val);
+  _bool_start_values.setStartValue(var,val,overwriteOldValue);
 }
 
 void SystemDefaultImplementation::setIntStartValue(int& var,int val)
 {
-  var=val;
-  _int_start_values.setStartValue(var,val);
+  setIntStartValue(var,val,false);
 }
-void SystemDefaultImplementation::setStringStartValue(string& var,string val)
+
+void SystemDefaultImplementation::setIntStartValue(int& var,int val,bool overwriteOldValue)
 {
   var=val;
-  _string_start_values.setStartValue(var,val);
+  _int_start_values.setStartValue(var,val,overwriteOldValue);
+}
+
+void SystemDefaultImplementation::setStringStartValue(string& var,string val)
+{
+  setStringStartValue(var,val,false);
+}
+
+void SystemDefaultImplementation::setStringStartValue(string& var,string val,bool overwriteOldValue)
+{
+  var=val;
+  _string_start_values.setStartValue(var,val,overwriteOldValue);
 }
 /** @} */ // end of coreSystem
 

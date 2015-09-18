@@ -62,6 +62,7 @@
     #include <SimCoreFactory/Policies/SystemOMCFactory.h>
     #include <SimCoreFactory/Policies/NonLinSolverOMCFactory.h>
     #include <SimCoreFactory/Policies/LinSolverOMCFactory.h>
+
     /*Policy defines*/
     typedef OMCFactory BaseFactory;
     typedef SystemOMCFactory<BaseFactory> SimControllerPolicy;
@@ -71,38 +72,15 @@
     typedef SolverSettingsOMCFactory<BaseFactory> SolverSettingsPolicy;
 
 #elif defined(OMC_BUILD) && defined(RUNTIME_STATIC_LINKING)
+
   /*include needed for object creation in factory classes*/
   #include <Core/Utils/Modelica/ModelicaSimulationError.h>
   #include <Core/Math/Array.h>
-  #include <Solver/CVode/CVode.h>
-  #include <Solver/IDA/IDA.h>
-  #include <Solver/UmfPack/UmfPack.h>
-  #include <Solver/UmfPack/UmfPackSettings.h>
-  #include <Solver/Newton/Newton.h>
-  #include <nvector/nvector_serial.h>
-#include <kinsol/kinsol.h>
-
-#ifdef USE_SUNDIALS_LAPACK
-  #include <kinsol/kinsol_lapack.h>
-#else
-  #include <kinsol/kinsol_spgmr.h>
-  #include <kinsol/kinsol_dense.h>
-#endif //USE_SUNDIALS_LAPACK
-
-#include <kinsol/kinsol_spbcgs.h>
-#include <kinsol/kinsol_sptfqmr.h>
-/*will be used with new sundials version: #include <kinsol/kinsol_klu.h>*/
-
-
-#include <boost/math/special_functions/fpclassify.hpp>
-#include <boost/numeric/ublas/lu.hpp>
-#include <boost/numeric/ublas/symmetric.hpp>
-
-
-  #include <Solver/Kinsol/Kinsol.h>
-  #include <Solver/Kinsol/KinsolSettings.h>
+  #include <Core/Solver/FactoryExport.h>
   #include <Core/Solver/SolverSettings.h>
   #include <Core/SimulationSettings/IGlobalSettings.h>
+  #include <SimCoreFactory/OMCFactory/OMCFactory.h>
+  #include <SimCoreFactory/OMCFactory/StaticOMCFactory.h>
     /*Base Policy include*/
     #include <SimCoreFactory/Policies/SolverOMCFactory.h>
     #include <SimCoreFactory/Policies/SolverSettingsOMCFactory.h>

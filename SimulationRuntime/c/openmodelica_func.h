@@ -110,6 +110,7 @@ int (*functionDAE)(DATA *data, threadData_t*);
 /* functions for input and output */
 int (*input_function)(DATA*, threadData_t*);
 int (*input_function_init)(DATA*, threadData_t*);
+int (*input_function_updateStartValues)(DATA*, threadData_t*);
 int (*output_function)(DATA*, threadData_t*);
 
 /* function for storing value histories of delayed expressions
@@ -296,9 +297,9 @@ int (*symEulerUpdate)(DATA * data, modelica_real dt);
 void (*function_initSynchronous)(DATA * data, threadData_t *threadData);
 
 /*
- * Check if clock is fired. In that case function updates base clock's timepoint and interval in CLOCK_DATA struct.
+ * Update clock interval.
  */
-modelica_boolean (*function_updateSynchronous)(DATA *data, threadData_t *threadData, long i);
+void (*function_updateSynchronous)(DATA *data, threadData_t *threadData, long i);
 
 /*
  * Sub-partition's equations
