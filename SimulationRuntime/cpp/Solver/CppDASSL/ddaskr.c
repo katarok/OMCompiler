@@ -6688,7 +6688,7 @@ L550:
 
 /*     Dense matrix. */
 L100:
-    dgetrs_("N", neq, &c__1, &wm[1], neq, &iwm[lipvt], &delta[1], neq, &info,
+    dgetrs_('N', neq, &c__1, &wm[1], neq, &iwm[lipvt], &delta[1], neq, &info,
 	    (int)1);
     return 0;
 
@@ -6701,7 +6701,7 @@ L300:
 
 L400:
     meband = (iwm[1] << 1) + iwm[2] + 1;
-    dgbtrs_("N", neq, &iwm[1], &iwm[2], &c__1, &wm[1], &meband, &iwm[lipvt], &
+    dgbtrs_('N', neq, &iwm[1], &iwm[2], &c__1, &wm[1], &meband, &iwm[lipvt], &
 	    delta[1], neq, &info, (int)1);
     return 0;
 
