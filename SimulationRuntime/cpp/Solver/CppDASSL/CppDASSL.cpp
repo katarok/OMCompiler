@@ -6,13 +6,13 @@
 #include <Solver/CppDASSL/CppDASSL.h>
 
 
-
+#if defined(USE_OPENMP)
 #include "omp.h"
 
 
 CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
-      _peersettings(dynamic_cast<ISolverSettings*>(_settings)),
+      _cppdasslsettings(dynamic_cast<ISolverSettings*>(_settings)),
       _h(2e-2),
       _continuous_system(),
       _time_system()
@@ -87,10 +87,10 @@ void CppDASSL::initialize()
     _info=new int[20];
     _rtol=1e-6;
     _atol=1e-6;
-    _rwork=new double[60+9*size+size*size];
-    _lrw=60+9*size+size*size;
-    _iwork=new int[40+size];
-    _liw=40+size;
+    _rwork=new double[60+9*_dimSys+_dimSys*_dimSys];
+    _lrw=60+9*_dimSys+_dimSys*_dimSys;
+    _iwork=new int[40+_dimSys];
+    _liw=40+_dimSys;
     _info[0]=0;
     _info[1]=0;
     _info[2]=0;
@@ -126,10 +126,10 @@ void CppDASSL::solve(const SOLVERCALL action)
 
   // Initialization phase
     t=_tCurrent;
-    _timeSystem[0]->setTime(t);
-    _continuousSystem[0]->setContinuousStates(_y);
-    _continuousSystem[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-    _continuousSystem[0]->getRHS(_yp);
+    _time_system[0]->setTime(t);
+    _continuous_system[0]->setContinuousStates(_y);
+    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_system[0]->getRHS(_yp);
     SolverDefaultImplementation::writeToFile(0, t, _h);
 
     ddaskr_(&res,&_dimSys,&t,&_y[0],&_yp[0],&_tEnd,_info,&_rtol,&_atol,&_idid,_rwork,&_lrw,_iwork,&_liw,NULL,NULL,NULL,NULL,&_nrt,NULL);
@@ -203,10 +203,10 @@ int CppDASSL::res(const double* t, const double* y, const double* yprime, double
 }
 
 int CppDASSL::calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires) {
-    _timeSystem[0]->setTime(t);
-    _continuousSystem[0]->setContinuousStates(y);
-    _continuousSystem[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-    _continuousSystem[0]->getRHS(delta);
+    _time_system[0]->setTime(*t);
+    _continuous_system[0]->setContinuousStates(y);
+    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_system[0]->getRHS(delta);
     for(int i=0; i<_dimSys; ++i) delta[i]=yprime[i]-delta[i];
     return 0;
 }
@@ -226,7 +226,7 @@ void CppDASSL::setTimeOut(unsigned int time_out)
   }
 
 
-void CppDASSL::setcycletime(double cycletime){}
+//void CppDASSL::setcycletime(double cycletime){}
 void CppDASSL::writeSimulationInfo(){}
 int CppDASSL::reportErrorMessage(std::ostream& messageStream) {
     return 0;

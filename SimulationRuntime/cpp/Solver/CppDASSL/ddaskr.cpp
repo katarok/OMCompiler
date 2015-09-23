@@ -6516,9 +6516,9 @@ L200:
         yprime[i__] += *cj * del;
         ++iwm[12];
         (*res)(x, &y[1], &yprime[1], cj, &e[1], ires, par);
-        if (*ires < 0) {
-            return 0;
-        }
+//        if (*ires < 0) {
+//            return 0;
+//        }
         delinv = 1. / del;
         i__2 = *neq;
         for (l = 1; l <= i__2; ++l) {
@@ -6666,8 +6666,7 @@ L550:
 /*   DGESL, DGBSL */
 
 /* ***END PROLOGUE  DSLVD */
-
-
+    char trans='N';
 
 
     /* Parameter adjustments */
@@ -6679,30 +6678,10 @@ L550:
     lipvt = iwm[30];
     mtype = iwm[4];
     switch (mtype) {
-	case 1:  goto L100;
-	case 2:  goto L100;
-	case 3:  goto L300;
-	case 4:  goto L400;
-	case 5:  goto L400;
+        case 1:  case 2: dgetrs_(&trans, neq, &c__1, &wm[1], neq, &iwm[lipvt], &delta[1], neq, &info, (int)1); break;
+        case 4:  case 5:  meband = (iwm[1] << 1) + iwm[2] + 1; dgbtrs_(&trans, neq, &iwm[1], &iwm[2], &c__1, &wm[1], &meband, &iwm[lipvt], &delta[1], neq, &info, (int)1); break;
     }
 
-/*     Dense matrix. */
-L100:
-    dgetrs_('N', neq, &c__1, &wm[1], neq, &iwm[lipvt], &delta[1], neq, &info,
-	    (int)1);
-    return 0;
-
-/*     Dummy section for MTYPE=3. */
-
-L300:
-    return 0;
-
-/*     Banded matrix. */
-
-L400:
-    meband = (iwm[1] << 1) + iwm[2] + 1;
-    dgbtrs_('N', neq, &iwm[1], &iwm[2], &c__1, &wm[1], &meband, &iwm[lipvt], &
-	    delta[1], neq, &info, (int)1);
     return 0;
 
 /* ------END OF SUBROUTINE DSLVD------------------------------------------ */

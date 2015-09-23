@@ -29,6 +29,7 @@ int ddaskr_ (
     int* JROOT
 );
 
+#if defined(USE_OPENMP)
 /*****************************************************************************/
 // Peer
 // BDF-Verfahren für steife und nicht-steife ODEs
@@ -116,12 +117,14 @@ private:
     *_rwork,
     *_y,
     *_yp;
-  long int
+  int
     _dimSys;                 ///< Input       - (total) Dimension of system (=number of ODE)
 
   void
     *_data;
 
+  static int res(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires, void *par);
+  int calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires);
 
 
   // Variables for Coloured Jacobians
@@ -157,7 +160,7 @@ class CppDASSL : public ISolver, public SolverDefaultImplementation
 public:
 	CppDASSL(IMixedSystem* system, ISolverSettings* settings) : ISolver(), SolverDefaultImplementation(system, settings)
 	{
-		throw std::runtime_error("Peer solver is not available.");
+		throw std::runtime_error("CppDASSL solver is not available.");
 	}
 
 	virtual void setStartTime(const double& time)
@@ -191,8 +194,6 @@ public:
 
 	virtual void writeSimulationInfo()
 	{}
-private:
-    static int res(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires, void *par);
-    int calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires);
+
 };
 #endif

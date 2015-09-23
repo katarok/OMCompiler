@@ -3,7 +3,7 @@
  #include <Core/Modelica.h>
 #include <Solver/CppDASSL/CppDASSLSettings.h>
 
-CppDASSLSettings::PeerSettings(IGlobalSettings* globalSettings)
+CppDASSLSettings::CppDASSLSettings(IGlobalSettings* globalSettings)
   : SolverSettings    (globalSettings)
   ,_denseOutput(true)
 {
