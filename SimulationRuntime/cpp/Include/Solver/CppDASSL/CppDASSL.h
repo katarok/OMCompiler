@@ -2,7 +2,8 @@
 #pragma once
 
 #include "FactoryExport.h"
-
+#include <Core/ModelicaDefine.h>
+#include <Core/Modelica.h>
 #include <Core/Solver/SolverDefaultImplementation.h>
 #include <Core/Utils/extension/measure_time.hpp>
 
@@ -126,6 +127,8 @@ private:
   static int res(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires, void *par);
   int calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires);
 
+  sparsematrix_t
+    *_jac;
 
   // Variables for Coloured Jacobians
 //  int  _sizeof_sparsePattern_colorCols;

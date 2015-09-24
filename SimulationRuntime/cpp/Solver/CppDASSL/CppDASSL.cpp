@@ -1,14 +1,15 @@
-#include <Core/ModelicaDefine.h>
-#include <Core/Modelica.h>
-
+#include <Solver/CppDASSL/CppDASSL.h>
 #include <Core/Math/Functions.h>
 //#include <Core/Math/ILapack.h>
-#include <Solver/CppDASSL/CppDASSL.h>
+
 
 
 #if defined(USE_OPENMP)
 #include "omp.h"
-
+#include <Core/Utils/numeric/bindings/umfpack/umfpack.hpp>
+#include <Core/Utils/numeric/bindings/ublas/vector.hpp>
+#include <Core/Utils/numeric/bindings/ublas.hpp>
+#include <boost/numeric/ublas/io.hpp>
 
 CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
@@ -56,6 +57,8 @@ CppDASSL::~CppDASSL()
     delete [] _rwork;
   if (_iwork)
     delete [] _iwork;
+  if(_jac)
+    delete [] _jac;
 }
 
 void CppDASSL::initialize()
@@ -109,9 +112,40 @@ void CppDASSL::initialize()
     _info[15]=0;
     _info[16]=0;
     _info[17]=0;
+    _info[18]=0;
     _nrt=0;
     _continuous_system[0]->evaluateAll(IContinuous::ALL);
     _continuous_system[0]->getContinuousStates(_y);
+// begin analyzation mode
+    _continuous_system[0]->setContinuousStates(_y);
+    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_system[0]->getRHS(_yp);
+
+    int _countnz=0;
+    double delta=1e-6;
+    double* _yphelp=new double[_dimSys];
+    _time_system[0]->setTime(_tCurrent);
+    _jac=new sparsematrix_t(_dimSys,_dimSys,_dimSys*_dimSys);
+    for(int i=0; i<_dimSys; ++i) {
+        double _ysave;
+        _ysave=_y[i];
+        _y[i]+=delta;
+        _continuous_system[0]->setContinuousStates(_y);
+        _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+        _continuous_system[0]->getRHS(_yphelp);
+        for(int j=0; j<_dimSys; ++j) {
+            if(_yphelp[j]-_yp[j]>1e-12) {
+                _countnz++;
+                (*_jac)(j,i)=(_yphelp[j]-_yp[j])/delta;
+            }
+        }
+        if(_countnz<_dimSys*_dimSys/100) {
+            _info[18]=1;
+        }
+        _y[i]=_ysave;
+    }
+
+    delete [] _yphelp;
 }
 
 
