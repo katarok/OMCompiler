@@ -1,113 +1,6 @@
-/* ddaskr.f -- translated by f2c (version 20090411).
-   You must link the resulting object file with libf2c:
-	on Microsoft Windows system, link with libf2c.lib;
-	on Linux or Unix systems, link with .../path/to/libf2c.a -lm
-	or, if you install libf2c.a in a standard place, with -lf2c -lm
-	-- in that order, at the end of the command line, as in
-		cc *.o -lf2c -lm
-	Source for libf2c is in /netlib/f2c/libf2c.zip, e.g.,
+#include <Solver/CppDASSL/dasslaux.h>
+#include <Solver/CppDASSL/dassl.h>
 
-		http://www.netlib.org/f2c/libf2c.zip
-*/
-
-//#ifdef __cplusplus
-//extern "C" {
-//#endif
-#include <iostream>
-#include <string>
-#include <cmath>
-#include "omp.h"
-//#include "f2c.h"
-#define TRUE_ (1)
-#define FALSE_ (0)
-#define abs(x) ((x) >= 0 ? (x) : -(x))
-#define min(a,b) ((a) <= (b) ? (a) : (b))
-#define max(a,b) ((a) >= (b) ? (a) : (b))
-
-typedef int (*U_fp)(int *, double *, double *, double *, int *, double *, void *);
-typedef int (*S_fp)(const double *,const double *,const double *, double*, double *, int *, void *);
-typedef int (*P_fp)(int *, double *, double *, double *, double *, double *, double *, double *, double *, int *, double *, double *, int *, void *);
-typedef int (*J_fp)(S_fp, int *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, void *);
-typedef int (*Ja_fp)(double *, int *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, void *);
-typedef int (*N_fp)(double *, double *, double *, int *, int *, int *, S_fp, Ja_fp, P_fp, double *, double *, double *, int *, void *, double *, double *, double *, double *, double *, double *, double *, int *, double *,
-                    double *, double *, double *, double *, double *, double *, double *, int *, int *, int *, int *);
-typedef int (*Nl_fp)(double *, double *, double *, int *, S_fp, Ja_fp, P_fp, double *, double *, int *, int *, void *, double *, double *, double *, double *, double *, double *, int *, double *, double *, double *,
-                    double *, double *, double *, double *, double *, double *, int *, int *, int *, int *, int *, int *);
-typedef int (*Jd_fp)(double *, double *, double *, double *, double *, void *);
-
-double pow_dd(double *ap, double *bp) {
-    return pow(*ap,*bp);
-}
-
-double d_sign(double *a, double *b) {
-    double x;
-    x=(*a>=0? *a : - *a );
-    return (*b>=0 ? x : -x);
-}
-
-extern "C" {
-    int dcopy_(int *, double *, int *, double *, int *);
-    extern int daxpy_(int *, double *, double *, int *, double *, int *);
-    extern int dgbtrf_(int *, int *, int *, int *, double *, int *, int *, int *);
-    extern int dgetrf_(int *, int *, double *, int *, int *, int *);
-    extern int dscal_(int *, double *, double *, int *);
-    extern int dgetrs_(char *trans, int *n, int *nrhs, double *a, int *lda, int *ipiv, double *b, int *ldb, int *info, int);
-    extern int dgbtrs_(char *trans, int *n, int *kl, int *ku, int *nrhs, double *ab, int *ldab, int *ipiv, double *b, int *ldb, int *info, int);
-    extern double dnrm2_(int *, double *, int *);
-    extern double ddot_(int *, double *, int *, double *, int *);
-}
-
-int xerrwd_(int *, int *, int *, int *, int *, int *, double *, double *, int);
-double d1mach_(int *);
-
-int dmatd_(int *neq, double *x, double *y, double *yprime, double *delta, double *cj, double * h__, int *ier, double *ewt, double *e, double *wm, int *iwm, S_fp res, int *ires, double *uround, Jd_fp jacd, void *par);
-int dinvwt_(int *neq, double *wt, int *ier);
-int ddatrp_(double *, double *, double *, double *, int *, int *, double *, double *);
-int dhels_(double *, int *, int *, double*, double *);
-int dheqr_(double *, int *, int *, double *, int *, int *);
-int dorth_(double *vnew, double *v, double *hes, int *n, int *ll, int *ldhes, int *kmp, double * snormw);
-int ddasid_(double *x, double *y, double *yprime, int *neq, int *icopt, int *id, S_fp res, Jd_fp jacd, double *pdum, double *h__, double *tscale, double *wt, int *jsdum, void *par, double *dumsvr, double *delta, double *r__, double *yic, double *ypic,
-	 double *dumpwk, double *wm, int *iwm, double *cj, double *uround, double *dume, double *dums, double * dumr, double *epcon, double *ratemx, double *stptol, int *jfdum, int *icnflg, int *icnstr, int *iernls);
-int ddasik_(double *x, double *y, double *yprime, int *neq, int *icopt, int *id, S_fp res, J_fp jack, P_fp psol, double *h__, double *tscale, double *wt, int * jskip,  void *par, double *savr, double * delta, double *r__, double *yic, double *ypic,
-             double *pwk, double *wm, int *iwm, double *cj, double * uround, double *epli, double *sqrtn, double *rsqrtn, double *epcon, double *ratemx, double *stptol, int * jflg, int *icnflg, int *icnstr, int *iernls);
-int dnedd_(double *x, double *y, double *yprime, int *neq, S_fp res, Jd_fp jacd, double *pdum, double *h__, double *wt, int *jstart, int *idid,  void *par, double *phi, double *gamma, double *savr, double *delta, double *e, double *wm, int *iwm, double *cj, double *cjold, double *cjlast, double *s, double *uround, double *dume, double *dums, double * dumr, double *epcon, int *jcalc, int *jfdum, int *kp1, int *nonneg, int *ntype, int *iernls);
-int dnedk_(double *x, double *y, double *yprime, int *neq, S_fp res, J_fp  jack, P_fp psol,    double *h__, double *wt, int *jstart, int *idid,  void *par, double *phi, double *gamma, double *savr, double *delta, double *e, double *wm, int *iwm, double *cj, double *cjold, double *cjlast, double *s, double *uround, double *epli, double *sqrtn, double * rsqrtn, double *epcon, int *jcalc, int *jflg, int * kp1, int *nonneg, int *ntype, int *iernls);
-int dmatd_(int *neq, double *x, double *y, double *yprime, double *delta, double *cj, double * h__, int *ier, double *ewt, double *e, double *wm, int *iwm, S_fp res, int *ires, double *uround, Jd_fp jacd,  void *par);
-int ddstp_(double *x, double *y, double *yprime, int *neq, S_fp res, Ja_fp jac, P_fp psol, double *h__, double *wt, double *vt, int *jstart, int *idid, void *par, double *phi, double *savr, double *delta, double *e, double *wm, int *iwm,
-            double *alpha, double *beta, double *gamma, double * psi, double *sigma, double *cj, double *cjold, double *hold, double *s, double *hmin, double *uround, double *epli, double *sqrtn, double *rsqrtn, double * epcon, int *iphase, int *jcalc,
-            int *jflg, int *k, int *kold, int *ns, int *nonneg, int *ntype, Nl_fp nls);
-int dcnst0_(int *neq, double *y, int *icnstr, int *iret);
-int ddasic_(double *x, double *y, double *yprime, int *neq, int *icopt, int *id, S_fp res, Ja_fp jac, P_fp psol, double *h__, double *tscale, double *wt, int * nic, int *idid, void *par, double *phi, double *savr, double *delta, double *e, double *yic,
-            double *ypic, double *pwk, double *wm, int *iwm, double *uround, double *epli, double *sqrtn, double *rsqrtn, double *epconi, double *stptol, int *jflg, int *icnflg, int *icnstr, N_fp nlsic);
-int drchek_(int *job, U_fp rt, int *nrt, int *neq, double *tn, double *tout, double *y, double *yp, double *phi, double *psi, int *kold, double *r0, double *r1, double *rx, int *jroot, int *irt, double *uround, int *info3, double *rwork, int *iwork,
-            void *par);
-int datv_(int *neq, double *y, double *tn, double *yprime, double *savr, double *v, double *wght, double *yptem, S_fp res, int *ires, P_fp psol, double * z__, double *vtem, double *wp, int *iwp, double *cj,
-            double *eplin, int *ier, int *nre, int *npsl, void *par);
-int ddawts_(int *neq, int *iwt, double *rtol, double *atol, double *y, double *wt, void *par);
-int dslvd_(int *neq, double *delta, double *wm, int *iwm);
-int dlinsd_(int *neq, double *y, double *t, double *yprime, double *cj, double *tscale, double *p, double *pnrm, double *wt, int *lsoff, double *stptol, int *iret, S_fp res, int *ires, double *wm, int *iwm, double *fnrm, int *icopt, int *id, double *r__,
-            double *ynew, double *ypnew, int *icnflg, int *icnstr, double *rlx, void *par);
-int dfnrmd_(int *neq, double *y, double *t, double *yprime, double *r__, double *cj, double * tscale, double *wt, S_fp res, int *ires, double *fnorm, double *wm, int *iwm, void *par);
-int dcnstr_(int *neq, double *y, double *ynew, int *icnstr, double *tau, double *rlx, int *iret, int *ivar);
-int dspigm_(int *neq, double *tn, double *y, double *yprime, double *savr, double *r__, double * wght, int *maxl, int *maxlp1, int *kmp, double *eplin, double *cj, S_fp res, int *ires, int *nre, P_fp psol, int *npsl, double *z__, double *v, double *hes,
-	double *q, int *lgmr, double *wp, int *iwp, double *wk, double *dl, double *rhok, int *iflag, int *irst, int *nrsts, void *par);
-int droots_(int *nrt, double *hmin, int *jflag, double *x0, double *x1, double *r0, double *r1, double *rx, double *x, int *jroot);
-int dnsid_(double *x, double *y, double *yprime, int *neq, int *icopt, int *id, S_fp res, double *wt, void *par, double *delta, double *r__, double *yic, double *ypic, double *wm, int *iwm, double *cj, double *tscale, double *epcon, double *
-	ratemx, int *maxit, double *stptol, int *icnflg, int * icnstr, int *iernew);
-int dnsd_(double *x, double *y, double *yprime, int *neq, S_fp res, double *pdum, double *wt, void *par, double *dumsvr, double *delta, double *e, double *wm, int *iwm, double *cj, double *dums, double *dumr, double *dume, double * epcon,
-            double *s, double *confac, double *tolnew, int *muldel, int *maxit, int *ires, int *idum, int * iernew);
-int dnsik_(double *x, double *y, double *yprime, int *neq, int *icopt, int *id, S_fp res, P_fp psol, double *wt, void *par, double *savr, double *delta, double *r__, double *yic, double *ypic, double *pwk, double *wm, int *iwm, double *cj,
-            double *tscale, double *sqrtn, double *rsqrtn, double *eplin, double *epcon, double *ratemx, int *maxit, double *stptol, int *icnflg, int *icnstr, int *iernew);
-int dslvk_(int *neq, double *y, double *tn, double *yprime, double *savr, double *x, double *ewt, double *wm, int *iwm, S_fp res, int *ires, P_fp psol, int *iersl, double *cj, double *eplin, double *sqrtn, double *rsqrtn, double *rhok, void *par);
-int dfnrmk_(int *neq, double *y, double *t, double *yprime, double *savr, double *r__, double *cj, double *tscale, double *wt, double *sqrtn, double * rsqrtn, S_fp res, int *ires, P_fp psol, int *irin, int * ier, double *fnorm, double *eplin, double *wp,
-            int *iwp, double *pwk, void *par);
-int dlinsk_(int *neq, double *y, double *t, double *yprime, double *savr, double *cj, double * tscale, double *p, double *pnrm, double *wt, double *sqrtn, double *rsqrtn, int *lsoff, double *stptol, int *iret, S_fp res, int *ires, P_fp psol, double *wm,
-            int *iwm, double *rhok, double *fnrm, int *icopt, int *id, double *wp, int *iwp, double *r__, double *eplin, double *ynew, double *ypnew, double *pwk, int *icnflg, int *icnstr, double *rlx, void * par);
-int dnsk_(double *x, double *y, double *yprime, int *neq, S_fp res, P_fp psol, double *wt, void *par, double *savr, double *delta, double *e, double *wm, int *iwm, double *cj, double *sqrtn, double *rsqrtn, double *eplin, double *epcon,
-            double *s, double *confac, double *tolnew, int *muldel, int *maxit, int *ires, int *iersl, int *iernew);
-
-
-double ddwnrm_(int *, double *, double *, void *);
 
 static int c__49 = 49;
 static int c__201 = 201;
@@ -218,7 +111,7 @@ static int c__924 = 924;
 static int c__925 = 925;
 static int c__926 = 926;
 
-/* Subroutine */ int ddaskr_(S_fp res, int *neq, double *t,
+/* Subroutine */ int dassl::ddaskr_(S_fp res, int *neq, double *t,
 	double *y, double *yprime, double *tout, int *info,
 	double *rtol, double *atol, int *idid, double *rwork,
 	int *lrw, int *iwork, int *liw, void *par, Ja_fp jac, P_fp psol, U_fp rt, int *nrt, int *jroot)
@@ -228,8 +121,6 @@ static int c__926 = 926;
     double d__1, d__2;
 
     /* Builtin functions */
-    double pow_dd(double *, double *), sqrt(double), d_sign(
-	    double *, double *);
 
     /* Local variables */
     static double h__;
@@ -963,7 +854,7 @@ static int c__926 = 926;
 /*               described below. */
 
 /*               If INFO(12) = 0 (standard direct method), the base value */
-/*               is BASE = 60 + max(MAXORD+4,7)*NEQ + 3*NRT. */
+/*               is BASE = 60 + std::max(MAXORD+4,7)*NEQ + 3*NRT. */
 /*               The default value is MAXORD = 5 (see INFO(9)).  With the */
 /*               default MAXORD, BASE = 60 + 9*NEQ + 3*NRT. */
 /*               Additional storage must be added to the base value for */
@@ -977,10 +868,10 @@ static int c__926 = 926;
 
 /*               If INFO(12) = 1 (Krylov method), the base value is */
 /*               BASE = 60 + (MAXORD+5)*NEQ + 3*NRT */
-/*                         + [MAXL + 3 + min(1,MAXL-KMP)]*NEQ */
+/*                         + [MAXL + 3 + std::min(1,MAXL-KMP)]*NEQ */
 /*                         + (MAXL+3)*MAXL + 1 + LENWP. */
 /*               See PSOL for description of LENWP.  The default values */
-/*               are: MAXORD = 5 (see INFO(9)), MAXL = min(5,NEQ) and */
+/*               are: MAXORD = 5 (see INFO(9)), MAXL = std::min(5,NEQ) and */
 /*               KMP = MAXL  (see INFO(13)).  With these default values, */
 /*               BASE = 101 + 18*NEQ + 3*NRT + LENWP. */
 /*               Additional storage must be added to the base value for */
@@ -1783,7 +1674,7 @@ L20:
 
     iwork[23] = info[12];
     if (info[13] == 0) {
-	iwork[24] = min(5,*neq);
+	iwork[24] = std::min(5,*neq);
 	iwork[25] = iwork[24];
 	iwork[26] = 5;
 	rwork[10] = .05;
@@ -1862,7 +1753,7 @@ L30:
 
 /* Computing MAX */
 	i__1 = mxord + 1;
-	ncphi = max(i__1,4);
+	ncphi = std::max(i__1,4);
 	if (info[6] == 0) {
 /* Computing 2nd power */
 	    i__1 = *neq;
@@ -1906,7 +1797,7 @@ L30:
 	leniwp = iwork[28];
 /* Computing MIN */
 	i__1 = 1, i__2 = maxl - iwork[25];
-	lenpd = (maxl + 3 + min(i__1,i__2)) * *neq + (maxl + 3) * maxl + 1 +
+	lenpd = (maxl + 3 + std::min(i__1,i__2)) * *neq + (maxl + 3) * maxl + 1 +
 		lenwp;
 	lenrw = *nrt * 3 + 60 + (mxord + 5) * *neq + lenpd;
 	leniw = lenic + 40 + lenid + leniwp;
@@ -2122,17 +2013,17 @@ L200:
 /* L305: */
 /* Computing MAX */
 	    i__2 = iwork[lid + i__ - 1];
-	    rwork[lvt + i__ - 1] = max(i__2,0) * rwork[lwt + i__ - 1];
+	    rwork[lvt + i__ - 1] = std::max(i__2,0) * rwork[lwt + i__ - 1];
 	}
     }
 
 /*     Compute unit roundoff and HMIN. */
 
-    uround = d1mach_(&c__4);
+    uround = std::numeric_limits<double>::epsilon();
     rwork[9] = uround;
 /* Computing MAX */
     d__1 = abs(*t), d__2 = abs(*tout);
-    hmin = uround * 4. * max(d__1,d__2);
+    hmin = uround * 4. * std::max(d__1,d__2);
 
 /*     Set/check STPTOL control for initial condition calculation. */
 
@@ -2243,8 +2134,7 @@ L350:
 		idid, par, &rwork[lphi], &rwork[lsavr], &rwork[
 		61], &rwork[le], &rwork[lyic], &rwork[lypic], &rwork[lpwk], &
 		rwork[lwm], &iwork[1], &rwork[9], &rwork[10], &rwork[11], &
-		rwork[12], &epconi, &rwork[14], &info[15], &icnflg, &iwork[41]
-		, (N_fp) ddasid_);
+		rwork[12], &epconi, &rwork[14], &info[15], &icnflg, &iwork[41]);
     } else if (info[12] == 1) {
 	lyic = lwm;
 	lypic = lyic + *neq;
@@ -2254,8 +2144,7 @@ L350:
 		idid, par, &rwork[lphi], &rwork[lsavr], &rwork[
 		61], &rwork[le], &rwork[lyic], &rwork[lypic], &rwork[lpwk], &
 		rwork[lwm], &iwork[1], &rwork[9], &rwork[10], &rwork[11], &
-		rwork[12], &epconi, &rwork[14], &info[15], &icnflg, &iwork[41]
-		, (N_fp) ddasik_);
+		rwork[12], &epconi, &rwork[14], &info[15], &icnflg, &iwork[41]);
     }
 
     if (*idid < 0) {
@@ -2301,7 +2190,7 @@ L355:
 /* L357: */
 /* Computing MAX */
 	    i__1 = iwork[lid + i__ - 1];
-	    rwork[lvt + i__ - 1] = max(i__1,0) * rwork[lwt + i__ - 1];
+	    rwork[lvt + i__ - 1] = std::max(i__1,0) * rwork[lwt + i__ - 1];
 	}
     }
 
@@ -2616,7 +2505,7 @@ L510:
 /* L515: */
 /* Computing MAX */
 	    i__2 = iwork[lid + i__ - 1];
-	    rwork[lvt + i__ - 1] = max(i__2,0) * rwork[lwt + i__ - 1];
+	    rwork[lvt + i__ - 1] = std::max(i__2,0) * rwork[lwt + i__ - 1];
 	}
     }
 
@@ -2652,7 +2541,7 @@ L525:
 
 /* Computing MAX */
     d__1 = abs(tn), d__2 = abs(*tout);
-    hmin = uround * 4. * max(d__1,d__2);
+    hmin = uround * 4. * std::max(d__1,d__2);
 
 /*     Test H vs. HMAX */
     if (info[7] != 0) {
@@ -2673,7 +2562,7 @@ L525:
 		rwork[39], &rwork[45], &rwork[5], &rwork[6], &rwork[7], &
 		rwork[8], &hmin, &rwork[9], &rwork[10], &rwork[11], &rwork[12]
 		, &rwork[13], &iwork[6], &iwork[5], &info[15], &iwork[7], &
-		iwork[8], &iwork[9], &nonneg, &info[12], (Nl_fp) dnedd_);
+		iwork[8], &iwork[9], &nonneg, &info[12]);
     } else if (info[12] == 1) {
 	ddstp_(&tn, &y[1], &yprime[1], neq, (S_fp)res, (Ja_fp)jac, (P_fp)psol,
 		&h__, &rwork[lwt], &rwork[lvt], &info[1], idid, par, &rwork[lphi], &rwork[lsavr], &rwork[61], &rwork[le],
@@ -2681,7 +2570,7 @@ L525:
 		rwork[39], &rwork[45], &rwork[5], &rwork[6], &rwork[7], &
 		rwork[8], &hmin, &rwork[9], &rwork[10], &rwork[11], &rwork[12]
 		, &rwork[13], &iwork[6], &iwork[5], &info[15], &iwork[7], &
-		iwork[8], &iwork[9], &nonneg, &info[12], (Nl_fp) dnedk_);
+		iwork[8], &iwork[9], &nonneg, &info[12]);
     }
 
 L527:
@@ -3146,7 +3035,7 @@ L760:
 /* ------END OF SUBROUTINE DDASKR----------------------------------------- */
 } /* ddaskr_ */
 
-/* Subroutine */ int drchek_(int *job, U_fp rt, int *nrt, int *
+/* Subroutine */ int dassl::drchek_(int *job, U_fp rt, int *nrt, int *
 	neq, double *tn, double *tout, double *y, double *yp,
 	double *phi, double *psi, int *kold, double *r0,
 	double *r1, double *rx, int *jroot, int *irt,
@@ -3280,7 +3169,7 @@ L100:
 /* R has a zero at T.  Look at R at T + (small increment). -------------- */
 /* Computing MAX */
     d__1 = hminr / abs(h__);
-    temp2 = max(d__1,.1);
+    temp2 = std::max(d__1,.1);
     temp1 = temp2 * h__;
     rwork[51] += temp1;
     i__1 = *neq;
@@ -3416,7 +3305,7 @@ L390:
 /* ---------------------- END OF SUBROUTINE DRCHEK ----------------------- */
 } /* drchek_ */
 
-/* Subroutine */ int droots_(int *nrt, double *hmin, int *jflag,
+/* Subroutine */ int dassl::droots_(int *nrt, double *hmin, int *jflag,
 	double *x0, double *x1, double *r0, double *r1,
 	double *rx, double *x, int *jroot)
 {
@@ -3740,7 +3629,7 @@ L420:
 /* ----------------------- END OF SUBROUTINE DROOTS ---------------------- */
 } /* droots_ */
 
-/* Subroutine */ int ddasic_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::ddasic_(double *x, double *y, double *yprime,
 	 int *neq, int *icopt, int *id, S_fp res, Ja_fp jac, P_fp
 	psol, double *h__, double *tscale, double *wt, int *
 	nic, int *idid, void *par, double *phi,
@@ -3748,7 +3637,7 @@ L420:
 	double *ypic, double *pwk, double *wm, int *iwm,
 	double *uround, double *epli, double *sqrtn, double *
 	rsqrtn, double *epconi, double *stptol, int *jflg,
-	int *icnflg, int *icnstr, N_fp nlsic)
+	int *icnflg, int *icnstr)
 {
     /* Initialized data */
 
@@ -3900,12 +3789,15 @@ L420:
 /* ----------------------------------------------------------------------- */
 
 L200:
-    (*nlsic)(x, &y[1], &yprime[1], neq, icopt, &id[1], (S_fp)res, (Ja_fp)jac, (
-	    P_fp)psol, h__, tscale, &wt[1], &jskip, par, &savr[
-	    1], &delta[1], &e[1], &yic[1], &ypic[1], &pwk[1], &wm[1], &iwm[1],
-	     &cj, uround, epli, sqrtn, rsqrtn, epconi, &ratemx, stptol, jflg,
-	    icnflg, &icnstr[1], &iernls);
-
+    if(info[11]==0) {
+        ddasid_(x, &y[1], &yprime[1], neq, icopt, &id[1], (S_fp)res, (Jd_fp) jac, NULL, h__, tscale, &wt[1], &jskip, par, &savr[1], &delta[1], &e[1], &yic[1], &ypic[1], &pwk[1], &wm[1], &iwm[1], &cj, uround, epli, sqrtn, rsqrtn, epconi, &ratemx, stptol, jflg, icnflg, &icnstr[1], &iernls);
+    } else {
+        ddasik_(x, &y[1], &yprime[1], neq, icopt, &id[1], (S_fp)res, (J_fp)jac, (
+            P_fp)psol, h__, tscale, &wt[1], &jskip, par, &savr[
+            1], &delta[1], &e[1], &yic[1], &ypic[1], &pwk[1], &wm[1], &iwm[1],
+             &cj, uround, epli, sqrtn, rsqrtn, epconi, &ratemx, stptol, jflg,
+            icnflg, &icnstr[1], &iernls);
+    }
     if (iernls == 0) {
 	return 0;
     }
@@ -3953,7 +3845,7 @@ L350:
 /* ------END OF SUBROUTINE DDASIC----------------------------------------- */
 } /* ddasic_ */
 
-/* Subroutine */ int dyypnw_(int *neq, double *y, double *yprime,
+/* Subroutine */ int dassl::dyypnw_(int *neq, double *y, double *yprime,
 	double *cj, double *rl, double *p, int *icopt,
 	int *id, double *ynew, double *ypnew)
 {
@@ -4027,7 +3919,7 @@ L350:
 /* ----------------------- END OF SUBROUTINE DYYPNW ---------------------- */
 } /* dyypnw_ */
 
-/* Subroutine */ int ddstp_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::ddstp_(double *x, double *y, double *yprime,
 	int *neq, S_fp res, Ja_fp jac, P_fp psol, double *h__,
 	double *wt, double *vt, int *jstart, int *idid,
 	void *par, double *phi, double *savr,
@@ -4037,7 +3929,7 @@ L350:
 	*hold, double *s, double *hmin, double *uround,
 	double *epli, double *sqrtn, double *rsqrtn, double *
 	epcon, int *iphase, int *jcalc, int *jflg, int *k,
-	int *kold, int *ns, int *nonneg, int *ntype, Nl_fp nls)
+	int *kold, int *ns, int *nonneg, int *ntype)
 {
     /* System generated locals */
     int phi_dim1, phi_offset, i__1, i__2;
@@ -4200,7 +4092,7 @@ L200:
     }
 /* Computing MIN */
     i__1 = *ns + 1, i__2 = *kold + 2;
-    *ns = min(i__1,i__2);
+    *ns = std::min(i__1,i__2);
     nsp1 = *ns + 1;
     if (kp1 < *ns) {
 	goto L230;
@@ -4246,7 +4138,7 @@ L230:
     ck = (d__1 = alpha[kp1] + alphas - alpha0, abs(d__1));
 /* Computing MAX */
     d__1 = ck, d__2 = alpha[kp1];
-    ck = max(d__1,d__2);
+    ck = std::max(d__1,d__2);
 
 /*     Change PHI to PHI STAR */
 
@@ -4281,12 +4173,19 @@ L280:
 /*     Call the nonlinear system solver to obtain the solution and */
 /*     derivative. */
 /* ----------------------------------------------------------------------- */
-
-    (*nls)(x, &y[1], &yprime[1], neq, (S_fp)res, (Ja_fp)jac, (P_fp)psol, h__, &
-	    wt[1], jstart, idid, par, &phi[phi_offset], &gamma[
-	    1], &savr[1], &delta[1], &e[1], &wm[1], &iwm[1], cj, cjold, &
-	    cjlast, s, uround, epli, sqrtn, rsqrtn, epcon, jcalc, jflg, &kp1,
-	    nonneg, ntype, &iernls);
+    if(info[11]==0) {
+        dnedd_(x, &y[1], &yprime[1], neq, (S_fp)res, (Jd_fp)jac, NULL, h__, &
+            wt[1], jstart, idid, par, &phi[phi_offset], &gamma[
+            1], &savr[1], &delta[1], &e[1], &wm[1], &iwm[1], cj, cjold, &
+            cjlast, s, uround, epli, sqrtn, rsqrtn, epcon, jcalc, jflg, &kp1,
+            nonneg, ntype, &iernls);
+    } else {
+        dnedk_(x, &y[1], &yprime[1], neq, (S_fp)res, (J_fp)jac, (P_fp)psol, h__, &
+            wt[1], jstart, idid, par, &phi[phi_offset], &gamma[
+            1], &savr[1], &delta[1], &e[1], &wm[1], &iwm[1], cj, cjold, &
+            cjlast, s, uround, epli, sqrtn, rsqrtn, epcon, jcalc, jflg, &kp1,
+            nonneg, ntype, &iernls);
+    }
 
     if (iernls != 0) {
 	goto L600;
@@ -4337,7 +4236,7 @@ L410:
     erkm2 = sigma[*k - 1] * ddwnrm_(neq, &delta[1], &vt[1], par
 	    );
     terkm2 = (*k - 1) * erkm2;
-    if (max(terkm1,terkm2) > terk) {
+    if (std::max(terkm1,terkm2) > terk) {
 	goto L430;
     }
 
@@ -4412,7 +4311,7 @@ L430:
     }
     goto L530;
 L520:
-    if (terkm1 <= min(terk,terkp1)) {
+    if (terkm1 <= std::min(terk,terkp1)) {
 	goto L540;
     }
     if (terkp1 >= terk || *k == iwm[3]) {
@@ -4462,8 +4361,8 @@ L555:
 	goto L560;
     }
 /* Computing MAX */
-    d__1 = .5, d__2 = min(.9,r__);
-    r__ = max(d__1,d__2);
+    d__1 = .5, d__2 = std::min(.9,r__);
+    r__ = std::max(d__1,d__2);
     hnew = *h__ * r__;
 L560:
     *h__ = hnew;
@@ -4590,8 +4489,8 @@ L660:
     d__2 = -1. / temp2;
     r__ = pow_dd(&d__1, &d__2) * .9;
 /* Computing MAX */
-    d__1 = .25, d__2 = min(.9,r__);
-    r__ = max(d__1,d__2);
+    d__1 = .25, d__2 = std::min(.9,r__);
+    r__ = std::max(d__1,d__2);
     *h__ *= r__;
     if (abs(*h__) >= *hmin) {
 	goto L690;
@@ -4666,7 +4565,7 @@ L690:
 /* ------END OF SUBROUTINE DDSTP------------------------------------------ */
 } /* ddstp_ */
 
-/* Subroutine */ int dcnstr_(int *neq, double *y, double *ynew,
+/* Subroutine */ int dassl::dcnstr_(int *neq, double *y, double *ynew,
 	int *icnstr, double *tau, double *rlx, int *iret,
 	int *ivar)
 {
@@ -4807,7 +4706,7 @@ L690:
 /* ----------------------- END OF SUBROUTINE DCNSTR ---------------------- */
 } /* dcnstr_ */
 
-/* Subroutine */ int dcnst0_(int *neq, double *y, int *icnstr,
+/* Subroutine */ int dassl::dcnst0_(int *neq, double *y, int *icnstr,
 	int *iret)
 {
     /* Initialized data */
@@ -4894,7 +4793,7 @@ L690:
 /* ----------------------- END OF SUBROUTINE DCNST0 ---------------------- */
 } /* dcnst0_ */
 
-/* Subroutine */ int ddawts_(int *neq, int *iwt, double *rtol,
+/* Subroutine */ int dassl::ddawts_(int *neq, int *iwt, double *rtol,
 	double *atol, double *y, double *wt, void *par)
 {
     /* System generated locals */
@@ -4947,7 +4846,7 @@ L10:
 /* ------END OF SUBROUTINE DDAWTS----------------------------------------- */
 } /* ddawts_ */
 
-/* Subroutine */ int dinvwt_(int *neq, double *wt, int *ier)
+/* Subroutine */ int dassl::dinvwt_(int *neq, double *wt, int *ier)
 {
     /* System generated locals */
     int i__1;
@@ -4997,7 +4896,7 @@ L30:
 /* ------END OF SUBROUTINE DINVWT----------------------------------------- */
 } /* dinvwt_ */
 
-/* Subroutine */ int ddatrp_(double *x, double *xout, double *
+/* Subroutine */ int dassl::ddatrp_(double *x, double *xout, double *
 	yout, double *ypout, int *neq, int *kold, double *phi,
 	 double *psi)
 {
@@ -5078,7 +4977,7 @@ L30:
 /* ------END OF SUBROUTINE DDATRP----------------------------------------- */
 } /* ddatrp_ */
 
-double ddwnrm_(int *neq, double *v, double *rwt, void *par)
+double dassl::ddwnrm_(int *neq, double *v, double *rwt, void *par)
 {
     /* System generated locals */
     int i__1;
@@ -5139,7 +5038,7 @@ L30:
 /* ------END OF FUNCTION DDWNRM------------------------------------------- */
 } /* ddwnrm_ */
 
-/* Subroutine */ int ddasid_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::ddasid_(double *x, double *y, double *yprime,
 	 int *neq, int *icopt, int *id, S_fp res, Jd_fp jacd,
 	double *pdum, double *h__, double *tscale, double *wt,
 	 int *jsdum, void *par, double *dumsvr,
@@ -5331,13 +5230,13 @@ L370:
     return 0;
 
 L380:
-    *iernls = min(iernew,2);
+    *iernls = std::min(iernew,2);
     return 0;
 
 /* ------END OF SUBROUTINE DDASID----------------------------------------- */
 } /* ddasid_ */
 
-/* Subroutine */ int dnsid_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::dnsid_(double *x, double *y, double *yprime,
 	int *neq, int *icopt, int *id, S_fp res, double *wt,
 	void *par, double *delta, double *r__,
 	double *yic, double *ypic, double *wm, int *iwm,
@@ -5527,7 +5426,7 @@ L390:
 /* ------END OF SUBROUTINE DNSID------------------------------------------ */
 } /* dnsid_ */
 
-/* Subroutine */ int dlinsd_(int *neq, double *y, double *t,
+/* Subroutine */ int dassl::dlinsd_(int *neq, double *y, double *t,
 	double *yprime, double *cj, double *tscale, double *p,
 	 double *pnrm, double *wt, int *lsoff, double *stptol,
 	 int *iret, S_fp res, int *ires, double *wm, int *iwm,
@@ -5754,7 +5653,7 @@ L200:
 /* ----------------------- END OF SUBROUTINE DLINSD ---------------------- */
 } /* dlinsd_ */
 
-/* Subroutine */ int dfnrmd_(int *neq, double *y, double *t,
+/* Subroutine */ int dassl::dfnrmd_(int *neq, double *y, double *t,
 	double *yprime, double *r__, double *cj, double *
 	tscale, double *wt, S_fp res, int *ires, double *fnorm,
 	double *wm, int *iwm, void *par)
@@ -5826,7 +5725,7 @@ L200:
 /* ----------------------- END OF SUBROUTINE DFNRMD ---------------------- */
 } /* dfnrmd_ */
 
-/* Subroutine */ int dnedd_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::dnedd_(double *x, double *y, double *yprime,
 	int *neq, S_fp res, Jd_fp jacd, double *pdum, double *h__,
 	double *wt, int *jstart, int *idid, void *par, double *phi, double *gamma, double *dumsvr,
 	 double *delta, double *e, double *wm, int *iwm,
@@ -6121,7 +6020,7 @@ L300:
 /* L377: */
 /* Computing MIN */
 	d__1 = y[i__];
-	delta[i__] = min(d__1,0.);
+	delta[i__] = std::min(d__1,0.);
     }
     delnrm = ddwnrm_(neq, &delta[1], &wt[1], par);
     if (delnrm > *epcon) {
@@ -6161,7 +6060,7 @@ L390:
 /* ------END OF SUBROUTINE DNEDD------------------------------------------ */
 } /* dnedd_ */
 
-/* Subroutine */ int dnsd_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::dnsd_(double *x, double *y, double *yprime,
 	int *neq, S_fp res, double *pdum, double *wt, void *par, double *dumsvr, double *delta,
 	double *e, double *wm, int *iwm, double *cj,
 	double *dums, double *dumr, double *dume, double *
@@ -6370,7 +6269,7 @@ L380:
 /* ------END OF SUBROUTINE DNSD------------------------------------------- */
 } /* dnsd_ */
 
-/* Subroutine */ int dmatd_(int *neq, double *x, double *y,
+/* Subroutine */ int dassl::dmatd_(int *neq, double *x, double *y,
 	double *yprime, double *delta, double *cj, double *
 	h__, int *ier, double *ewt, double *e, double *wm,
 	int *iwm, S_fp res, int *ires, double *uround, Jd_fp jacd,
@@ -6505,8 +6404,8 @@ L200:
 /* Computing MAX */
         d__5 = (d__1 = y[i__], abs(d__1)), d__6 = (d__2 = *h__ * yprime[i__],
             abs(d__2));
-        d__3 = squr * max(d__5,d__6), d__4 = 1. / ewt[i__];
-        del = max(d__3,d__4);
+        d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__];
+        del = std::max(d__3,d__4);
         d__1 = *h__ * yprime[i__];
         del = d_sign(&del, &d__1);
         del = y[i__] + del - y[i__];
@@ -6562,7 +6461,7 @@ L400:
 
 L500:
     mband = iwm[1] + iwm[2] + 1;
-    mba = min(mband,*neq);
+    mba = std::min(mband,*neq);
     meband = mband + iwm[1];
     meb1 = meband - 1;
     msave = *neq / mband + 1;
@@ -6582,8 +6481,8 @@ L500:
 /* Computing MAX */
 	    d__5 = (d__1 = y[n], abs(d__1)), d__6 = (d__2 = *h__ * yprime[n],
 		    abs(d__2));
-	    d__3 = squr * max(d__5,d__6), d__4 = 1. / ewt[n];
-	    del = max(d__3,d__4);
+	    d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[n];
+	    del = std::max(d__3,d__4);
 	    d__1 = *h__ * yprime[n];
 	    del = d_sign(&del, &d__1);
 	    del = y[n] + del - y[n];
@@ -6606,18 +6505,18 @@ L500:
 /* Computing MAX */
 	    d__5 = (d__1 = y[n], abs(d__1)), d__6 = (d__2 = *h__ * yprime[n],
 		    abs(d__2));
-	    d__3 = squr * max(d__5,d__6), d__4 = 1. / ewt[n];
-	    del = max(d__3,d__4);
+	    d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[n];
+	    del = std::max(d__3,d__4);
 	    d__1 = *h__ * yprime[n];
 	    del = d_sign(&del, &d__1);
 	    del = y[n] + del - y[n];
 	    delinv = 1. / del;
 /* Computing MAX */
 	    i__4 = 1, i__5 = n - iwm[2];
-	    i1 = max(i__4,i__5);
+	    i1 = std::max(i__4,i__5);
 /* Computing MIN */
 	    i__4 = *neq, i__5 = n + iwm[1];
-	    i2 = min(i__4,i__5);
+	    i2 = std::min(i__4,i__5);
 	    ii = n * meb1 - iwm[1];
 	    i__4 = i2;
 	    for (i__ = i1; i__ <= i__4; ++i__) {
@@ -6638,8 +6537,7 @@ L550:
 /* ------END OF SUBROUTINE DMATD------------------------------------------ */
 } /* dmatd_ */
 
-/* Subroutine */ int dslvd_(int *neq, double *delta, double *wm,
-	int *iwm)
+/* Subroutine */ int dassl::dslvd_(int *neq, double *delta, double *wm, int *iwm)
 {
     static int info, lipvt, mtype, meband;
 
@@ -6687,7 +6585,7 @@ L550:
 /* ------END OF SUBROUTINE DSLVD------------------------------------------ */
 } /* dslvd_ */
 
-/* Subroutine */ int ddasik_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::ddasik_(double *x, double *y, double *yprime,
 	 int *neq, int *icopt, int *id, S_fp res, J_fp jack, P_fp
 	psol, double *h__, double *tscale, double *wt, int *
 	jskip, void *par, double *savr, double *
@@ -6890,13 +6788,13 @@ L370:
     return 0;
 
 L380:
-    *iernls = min(iernew,2);
+    *iernls = std::min(iernew,2);
     return 0;
 
 /* ----------------------- END OF SUBROUTINE DDASIK----------------------- */
 } /* ddasik_ */
 
-/* Subroutine */ int dnsik_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::dnsik_(double *x, double *y, double *yprime,
 	int *neq, int *icopt, int *id, S_fp res, P_fp psol,
 	double *wt, void *par, double *savr,
 	double *delta, double *r__, double *yic, double *ypic,
@@ -7133,7 +7031,7 @@ L390:
 /* ----------------------- END OF SUBROUTINE DNSIK------------------------ */
 } /* dnsik_ */
 
-/* Subroutine */ int dlinsk_(int *neq, double *y, double *t,
+/* Subroutine */ int dassl::dlinsk_(int *neq, double *y, double *t,
 	double *yprime, double *savr, double *cj, double *
 	tscale, double *p, double *pnrm, double *wt, double *
 	sqrtn, double *rsqrtn, int *lsoff, double *stptol,
@@ -7379,7 +7277,7 @@ L200:
 /* ----------------------- END OF SUBROUTINE DLINSK ---------------------- */
 } /* dlinsk_ */
 
-/* Subroutine */ int dfnrmk_(int *neq, double *y, double *t,
+/* Subroutine */ int dassl::dfnrmk_(int *neq, double *y, double *t,
 	double *yprime, double *savr, double *r__, double *cj,
 	 double *tscale, double *wt, double *sqrtn, double *
 	rsqrtn, S_fp res, int *ires, P_fp psol, int *irin, int *
@@ -7471,7 +7369,7 @@ L200:
 /* ----------------------- END OF SUBROUTINE DFNRMK ---------------------- */
 } /* dfnrmk_ */
 
-/* Subroutine */ int dnedk_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::dnedk_(double *x, double *y, double *yprime,
 	int *neq, S_fp res, J_fp jack, P_fp psol, double *h__,
 	double *wt, int *jstart, int *idid, void *par, double *phi, double *gamma, double *savr,
 	double *delta, double *e, double *wm, int *iwm,
@@ -7770,7 +7668,7 @@ L300:
 /* L360: */
 /* Computing MIN */
 	d__1 = y[i__];
-	delta[i__] = min(d__1,0.);
+	delta[i__] = std::min(d__1,0.);
     }
     delnrm = ddwnrm_(neq, &delta[1], &wt[1], par);
     if (delnrm > *epcon) {
@@ -7821,7 +7719,7 @@ L390:
 /* ------END OF SUBROUTINE DNEDK------------------------------------------ */
 } /* dnedk_ */
 
-/* Subroutine */ int dnsk_(double *x, double *y, double *yprime,
+/* Subroutine */ int dassl::dnsk_(double *x, double *y, double *yprime,
 	int *neq, S_fp res, P_fp psol, double *wt, void *par, double *savr, double *delta, double *e,
 	double *wm, int *iwm, double *cj, double *sqrtn,
 	double *rsqrtn, double *eplin, double *epcon, double *
@@ -8049,7 +7947,7 @@ L380:
 /* ------END OF SUBROUTINE DNSK------------------------------------------- */
 } /* dnsk_ */
 
-/* Subroutine */ int dslvk_(int *neq, double *y, double *tn,
+/* Subroutine */ int dassl::dslvk_(int *neq, double *y, double *tn,
 	double *yprime, double *savr, double *x, double *ewt,
 	double *wm, int *iwm, S_fp res, int *ires, P_fp psol,
 	int *iersl, double *cj, double *eplin, double *sqrtn,
@@ -8149,7 +8047,7 @@ L380:
     lwk = lq + (maxl << 1);
 /* Computing MIN */
     i__1 = 1, i__2 = maxl - kmp;
-    ldl = lwk + min(i__1,i__2) * *neq;
+    ldl = lwk + std::min(i__1,i__2) * *neq;
     lz = ldl + *neq;
     dscal_(neq, rsqrtn, &ewt[1], &c__1);
     dcopy_(neq, &x[1], &c__1, &wm[lr], &c__1);
@@ -8218,7 +8116,7 @@ L115:
 /* ------END OF SUBROUTINE DSLVK------------------------------------------ */
 } /* dslvk_ */
 
-/* Subroutine */ int dspigm_(int *neq, double *tn, double *y,
+/* Subroutine */ int dassl::dspigm_(int *neq, double *tn, double *y,
 	double *yprime, double *savr, double *r__, double *
 	wght, int *maxl, int *maxlp1, int *kmp, double *eplin,
 	 double *cj, S_fp res, int *ires, int *nre, P_fp psol,
@@ -8637,7 +8535,7 @@ L300:
 /* ------END OF SUBROUTINE DSPIGM----------------------------------------- */
 } /* dspigm_ */
 
-/* Subroutine */ int datv_(int *neq, double *y, double *tn,
+/* Subroutine */ int dassl::datv_(int *neq, double *y, double *tn,
 	double *yprime, double *savr, double *v, double *wght,
 	 double *yptem, S_fp res, int *ires, P_fp psol, double *
 	z__, double *vtem, double *wp, int *iwp, double *cj,
@@ -8794,7 +8692,7 @@ L300:
 /* ------END OF SUBROUTINE DATV------------------------------------------- */
 } /* datv_ */
 
-/* Subroutine */ int dorth_(double *vnew, double *v, double *hes,
+/* Subroutine */ int dassl::dorth_(double *vnew, double *v, double *hes,
 	int *n, int *ll, int *ldhes, int *kmp, double *
 	snormw)
 {
@@ -8886,7 +8784,7 @@ L300:
 /* ----------------------------------------------------------------------- */
 /* Computing MAX */
     i__1 = 1, i__2 = *ll - *kmp + 1;
-    i0 = max(i__1,i__2);
+    i0 = std::max(i__1,i__2);
     i__1 = *ll;
     for (i__ = i0; i__ <= i__1; ++i__) {
 	hes[i__ + *ll * hes_dim1] = ddot_(n, &v[i__ * v_dim1 + 1], &c__1, &
@@ -8929,14 +8827,14 @@ L30:
 /* Computing 2nd power */
     d__3 = *snormw;
     d__1 = 0., d__2 = d__3 * d__3 - sumdsq;
-    arg = max(d__1,d__2);
+    arg = std::max(d__1,d__2);
     *snormw = sqrt(arg);
     return 0;
 
 /* ------END OF SUBROUTINE DORTH------------------------------------------ */
 } /* dorth_ */
 
-/* Subroutine */ int dheqr_(double *a, int *lda, int *n,
+/* Subroutine */ int dassl::dheqr_(double *a, int *lda, int *n,
 	double *q, int *info, int *ijob)
 {
     /* System generated locals */
@@ -9147,7 +9045,7 @@ L130:
 /* ------END OF SUBROUTINE DHEQR------------------------------------------ */
 } /* dheqr_ */
 
-/* Subroutine */ int dhels_(double *a, int *lda, int *n,
+/* Subroutine */ int dassl::dhels_(double *a, int *lda, int *n,
 	double *q, double *b)
 {
     /* System generated locals */
@@ -9253,6 +9151,38 @@ L130:
 /* ------END OF SUBROUTINE DHELS------------------------------------------ */
 } /* dhels_ */
 
+
+
+
+int dassl::xerrwd_(int *nerr, int
+	*level, int *ni, int *i1, int *i2, int *nr,
+	double *r1, double *r2, int msg_len)
+{
+
+    if (*ni == 1) {
+        std::cout<<"      In above message,  I1 =   "<<*i1<<std::endl;
+    }
+    if (*ni == 2) {
+        std::cout<<"      In above message,  I1 =   "<<*i1<<std::endl<<"      In above message,  I2 =   "<<*i2<<std::endl;
+    }
+    if (*nr == 1) {
+        std::cout<<"      In above message,  I1 =   "<<*r1<<std::endl;
+    }
+    if (*nr == 2) {
+        std::cout<<"      In above message,  I1 =   "<<*r1<<std::endl<<"      In above message,  I2 =   "<<*r2<<std::endl;
+    }
+
+    return 0;
+} /* xerrwd_ */
+
+int dassl::solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, U_fp rt, int nrt, int jroot) {
+    rwork.resize(60+9*_dimSys+_dimSys*_dimSys);
+    lrw=60+9*_dimSys+_dimSys*_dimSys;
+    iwork.resize(40+_dimSys);
+    liw=40+_dimSys;
+    ddaskr_(res, &_dimSys, &t, y, yprime, &tout, &info[0], &rtol, &atol, &idid, &rwork[0], &lrw, &iwork[0], &liw, par, jac, psol, rt, &nrt, &jroot);
+    return 0;
+}
 
 //#ifdef __cplusplus
 //	}

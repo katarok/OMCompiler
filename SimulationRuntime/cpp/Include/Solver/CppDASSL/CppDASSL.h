@@ -6,29 +6,7 @@
 #include <Core/Modelica.h>
 #include <Core/Solver/SolverDefaultImplementation.h>
 #include <Core/Utils/extension/measure_time.hpp>
-
-int ddaskr_ (
-    int (*RES)(const double* t,const double* y,const double* yprime, double* cj, double* delta, int* ires, void *),
-    int* NEQ,
-    double* T,
-    double* Y,
-    double* YPRIME,
-    double* TOUT,
-    int* INFO,
-    double* RTOL,
-    double* ATOL,
-    int* IDID,
-    double* RWORK,
-    int* LRW,
-    int* IWORK,
-    int* LIW,
-    void* PAR,
-    int (*JAC)(double *, int *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, void *),
-    int (*PSOL)(int *NEQ, double* T, double* Y, double* YPRIME, double* SAVR, double* WK, double* CJ, double* WGHT, double * WP, int* IWP, double* B, double* EPLIN, int* IER, void *),
-    int (*RT)(int* NEQ,double* T,double* Y,double* YP,int* NRT, double* RVAL, void *),
-    int* NRT,
-    int* JROOT
-);
+#include <Solver/CppDASSL/dassl.h>
 
 #if defined(USE_OPENMP)
 /*****************************************************************************/
@@ -104,18 +82,10 @@ private:
   ISolverSettings
     *_cppdasslsettings;              ///< Input      - Solver settings
 
-  int
-    _nrt,
-    _idid,
-    *_info,
-    _lrw,
-    _liw,
-    *_iwork;
+  dassl
+    dasslSolver;
+
   double
-    _atol,
-    _rtol,
-    _h,
-    *_rwork,
     *_y,
     *_yp;
   int
@@ -127,8 +97,6 @@ private:
   static int res(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires, void *par);
   int calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires);
 
-  sparsematrix_t
-    *_jac;
 
   // Variables for Coloured Jacobians
 //  int  _sizeof_sparsePattern_colorCols;
