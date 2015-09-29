@@ -114,7 +114,7 @@ static int c__926 = 926;
 /* Subroutine */ int dassl::ddaskr_(S_fp res, int *neq, double *t,
 	double *y, double *yprime, double *tout, int *info,
 	double *rtol, double *atol, int *idid, double *rwork,
-	int *lrw, int *iwork, int *liw, void *par, Ja_fp jac, P_fp psol, U_fp rt, int *nrt, int *jroot)
+	int *lrw, int *iwork, int *liw, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int *nrt, int *jroot)
 {
     /* System generated locals */
     int i__1, i__2;
@@ -2254,7 +2254,7 @@ L370:
     if (*nrt == 0) {
 	goto L390;
     }
-    drchek_(&c__1, (U_fp)rt, nrt, neq, t, tout, &y[1], &yprime[1], &rwork[
+    drchek_(&c__1, (UC_fp)rt, nrt, neq, t, tout, &y[1], &yprime[1], &rwork[
 	    lphi], &rwork[39], &iwork[8], &rwork[lr0], &rwork[lr1], &rwork[
 	    lrx], jroot, &irt, &rwork[9], &info[3], &rwork[1], &iwork[1], par);
     if (irt < 0) {
@@ -2281,7 +2281,7 @@ L400:
 
 /*     Check for a zero of R near TN. */
 
-    drchek_(&c__2, (U_fp)rt, nrt, neq, &tn, tout, &y[1], &yprime[1], &rwork[
+    drchek_(&c__2, (UC_fp)rt, nrt, neq, &tn, tout, &y[1], &yprime[1], &rwork[
 	    lphi], &rwork[39], &iwork[8], &rwork[lr0], &rwork[lr1], &rwork[
 	    lrx], jroot, &irt, &rwork[9], &info[3], &rwork[1], &iwork[1], par);
     if (irt < 0) {
@@ -2589,7 +2589,7 @@ L527:
 
 /*     Check for a zero of R near TN. */
 
-    drchek_(&c__3, (U_fp)rt, nrt, neq, &tn, tout, &y[1], &yprime[1], &rwork[
+    drchek_(&c__3, (UC_fp)rt, nrt, neq, &tn, tout, &y[1], &yprime[1], &rwork[
 	    lphi], &rwork[39], &iwork[8], &rwork[lr0], &rwork[lr1], &rwork[
 	    lrx], jroot, &irt, &rwork[9], &info[3], &rwork[1], &iwork[1], par);
     if (irt != 1) {
@@ -3035,7 +3035,7 @@ L760:
 /* ------END OF SUBROUTINE DDASKR----------------------------------------- */
 } /* ddaskr_ */
 
-/* Subroutine */ int dassl::drchek_(int *job, U_fp rt, int *nrt, int *
+/* Subroutine */ int dassl::drchek_(int *job, UC_fp rt, int *nrt, int *
 	neq, double *tn, double *tout, double *y, double *yp,
 	double *phi, double *psi, int *kold, double *r0,
 	double *r1, double *rx, int *jroot, int *irt,
@@ -9175,7 +9175,7 @@ int dassl::xerrwd_(int *nerr, int
     return 0;
 } /* xerrwd_ */
 
-int dassl::solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, U_fp rt, int nrt, int jroot) {
+int dassl::solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int nrt, int jroot) {
     rwork.resize(60+9*_dimSys+_dimSys*_dimSys);
     lrw=60+9*_dimSys+_dimSys*_dimSys;
     iwork.resize(40+_dimSys);

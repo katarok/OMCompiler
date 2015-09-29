@@ -3,7 +3,7 @@ cmake_minimum_required (VERSION 2.8.6)
 project(${CppDASSLName})
 
 # add the solver default implementation library
-add_library(${CppDASSLName}_static STATIC ddaskr.cpp daux.cpp CppDASSL.cpp CppDASSLSettings.cpp FactoryExport.cpp)
+add_library(${CppDASSLName}_static STATIC ddaskr.cpp CppDASSL.cpp CppDASSLSettings.cpp FactoryExport.cpp)
 
 SET(CPPDASSL_COMPILE_DEFINITIONS "")
 IF(OPENMP_FOUND)
@@ -15,7 +15,7 @@ ENDIF(OPENMP_FOUND)
 add_precompiled_header(${CppDASSLName}_static Include/Core/Modelica.h )
 install (TARGETS ${CppDASSLName}_static DESTINATION ${LIBINSTALLEXT})
 
-add_library(${CppDASSLName} SHARED ddaskr.cpp daux.cpp CppDASSL.cpp CppDASSLSettings.cpp FactoryExport.cpp  )
+add_library(${CppDASSLName} SHARED ddaskr.cpp CppDASSL.cpp CppDASSLSettings.cpp FactoryExport.cpp  )
 target_link_libraries (${CppDASSLName} ${SolverName} ${ExtensionUtilitiesName} ${Boost_LIBRARIES})
 
 IF(OPENMP_FOUND)

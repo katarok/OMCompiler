@@ -14,7 +14,6 @@
 CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
       _cppdasslsettings(dynamic_cast<ISolverSettings*>(_settings)),
-      _h(2e-2),
       _continuous_system(),
       _time_system()
 /*      _cvodeMem(NULL),
@@ -51,12 +50,6 @@ CppDASSL::~CppDASSL()
     delete [] _y;
   if (_yp)
     delete [] _yp;
-  if (_info)
-    delete [] _info;
-  if (_rwork)
-    delete [] _rwork;
-  if (_iwork)
-    delete [] _iwork;
 }
 
 void CppDASSL::initialize()
@@ -74,14 +67,13 @@ void CppDASSL::initialize()
         dynamic_cast<ISystemInitialization*>(clonedSystem)->initialize();
     }*/
 
+    dasslSolver.setNumThreads(_cppdasslsettings->getGlobalSettings()->getSolverThreads());
     SolverDefaultImplementation::initialize();
     _dimSys = _continuous_system[0]->getDimContinuousStates();
-    _h = std::max(std::min(_h, _cppdasslsettings->getUpperLimit()), _cppdasslsettings->getLowerLimit());
     _y = new double[_dimSys];
     _yp = new double[_dimSys];
 
 
-    _nrt=0;
     _continuous_system[0]->evaluateAll(IContinuous::ALL);
     _continuous_system[0]->getContinuousStates(_y);
 // begin analyzation mode
@@ -135,11 +127,8 @@ void CppDASSL::solve(const SOLVERCALL action)
     _continuous_system[0]->getRHS(_yp);
     SolverDefaultImplementation::writeToFile(0, t, _h);
 
-    ddaskr_(&res,&_dimSys,&t,&_y[0],&_yp[0],&_tEnd,_info,&_rtol,&_atol,&_idid,_rwork,&_lrw,_iwork,&_liw,NULL,NULL,NULL,NULL,&_nrt,NULL);
-    while(_idid==-1) {
-        _info[0]=1;
-        ddaskr_(&res,&_dimSys,&t,&_y[0],&_yp[0],&_tEnd,_info,&_rtol,&_atol,&_idid,_rwork,&_lrw,_iwork,&_liw,NULL,NULL,NULL,NULL,&_nrt,NULL);
-    }
+    dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,NULL,NULL,NULL,NULL,0,0);
+
     _tCurrent=_tEnd;
     _time_system[0]->setTime(_tCurrent);
     _continuous_system[0]->setContinuousStates(_y);

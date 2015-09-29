@@ -1,7 +1,8 @@
+#pragma once
 #include "omp.h"
 #include <vector>
 
-typedef int (*U_fp)(int *, double *, double *, double *, int *, double *, void *);
+typedef int (*UC_fp)(int *, double *, double *, double *, int *, double *, void *);
 typedef int (*S_fp)(const double *,const double *,const double *, double*, double *, int *, void *);
 typedef int (*P_fp)(int *, double *, double *, double *, double *, double *, double *, double *, double *, int *, double *, double *, int *, void *);
 typedef int (*J_fp)(S_fp, int *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, void *);
@@ -38,9 +39,9 @@ class dassl {
         void setRTol(double rtol) {
             this->rtol=rtol;
         }
-        int solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, U_fp rt, int nrt, int jroot);
+        int solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int nrt, int jroot);
     private:
-        int ddaskr_(S_fp res, int *neq, double *t, double *y, double *yprime, double *tout, int *info, double *rtol, double *atol, int *idid, double *rwork, int *lrw, int *iwork, int *liw, void *par, Ja_fp jac, P_fp psol, U_fp rt, int *nrt, int *jroot);
+        int ddaskr_(S_fp res, int *neq, double *t, double *y, double *yprime, double *tout, int *info, double *rtol, double *atol, int *idid, double *rwork, int *lrw, int *iwork, int *liw, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int *nrt, int *jroot);
         int dmatd_(int *neq, double *x, double *y, double *yprime, double *delta, double *cj, double * h__, int *ier, double *ewt, double *e, double *wm, int *iwm, S_fp res, int *ires, double *uround, Jd_fp jacd, void *par);
         int dinvwt_(int *neq, double *wt, int *ier);
         int ddatrp_(double *, double *, double *, double *, int *, int *, double *, double *);
@@ -60,7 +61,7 @@ class dassl {
         int dcnst0_(int *neq, double *y, int *icnstr, int *iret);
         int ddasic_(double *x, double *y, double *yprime, int *neq, int *icopt, int *id, S_fp res, Ja_fp jac, P_fp psol, double *h__, double *tscale, double *wt, int * nic, int *idid, void *par, double *phi, double *savr, double *delta, double *e, double *yic,
                     double *ypic, double *pwk, double *wm, int *iwm, double *uround, double *epli, double *sqrtn, double *rsqrtn, double *epconi, double *stptol, int *jflg, int *icnflg, int *icnstr);
-        int drchek_(int *job, U_fp rt, int *nrt, int *neq, double *tn, double *tout, double *y, double *yp, double *phi, double *psi, int *kold, double *r0, double *r1, double *rx, int *jroot, int *irt, double *uround, int *info3, double *rwork, int *iwork,
+        int drchek_(int *job, UC_fp rt, int *nrt, int *neq, double *tn, double *tout, double *y, double *yp, double *phi, double *psi, int *kold, double *r0, double *r1, double *rx, int *jroot, int *irt, double *uround, int *info3, double *rwork, int *iwork,
                     void *par);
         int datv_(int *neq, double *y, double *tn, double *yprime, double *savr, double *v, double *wght, double *yptem, S_fp res, int *ires, P_fp psol, double * z__, double *vtem, double *wp, int *iwp, double *cj,
                     double *eplin, int *ier, int *nre, int *npsl, void *par);
