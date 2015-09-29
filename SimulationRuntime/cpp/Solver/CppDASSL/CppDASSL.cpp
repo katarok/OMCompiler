@@ -14,7 +14,6 @@
 CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
       _cppdasslsettings(dynamic_cast<ISolverSettings*>(_settings)),
-      _h(2e-2),
       _continuous_system(),
       _time_system()
 /*      _cvodeMem(NULL),
@@ -51,14 +50,6 @@ CppDASSL::~CppDASSL()
     delete [] _y;
   if (_yp)
     delete [] _yp;
-  if (_info)
-    delete [] _info;
-  if (_rwork)
-    delete [] _rwork;
-  if (_iwork)
-    delete [] _iwork;
-  if(_jac)
-    delete [] _jac;
 }
 
 void CppDASSL::initialize()
@@ -76,44 +67,13 @@ void CppDASSL::initialize()
         dynamic_cast<ISystemInitialization*>(clonedSystem)->initialize();
     }*/
 
+    dasslSolver.setNumThreads(_cppdasslsettings->getGlobalSettings()->getSolverThreads());
     SolverDefaultImplementation::initialize();
     _dimSys = _continuous_system[0]->getDimContinuousStates();
-    _h = std::max(std::min(_h, _cppdasslsettings->getUpperLimit()), _cppdasslsettings->getLowerLimit());
     _y = new double[_dimSys];
     _yp = new double[_dimSys];
-    if(_info)
-        delete [] _info;
-    if(_rwork)
-        delete [] _rwork;
-    if(_iwork)
-        delete [] _iwork;
-    _info=new int[20];
-    _rtol=1e-6;
-    _atol=1e-6;
-    _rwork=new double[60+9*_dimSys+_dimSys*_dimSys];
-    _lrw=60+9*_dimSys+_dimSys*_dimSys;
-    _iwork=new int[40+_dimSys];
-    _liw=40+_dimSys;
-    _info[0]=0;
-    _info[1]=0;
-    _info[2]=0;
-    _info[3]=0;
-    _info[4]=0;
-    _info[5]=0;
-    _info[6]=0;
-    _info[7]=0;
-    _info[8]=0;
-    _info[9]=0;
-    _info[10]=0;
-    _info[11]=0;
-    _info[12]=0;
-    _info[13]=0;
-    _info[14]=0;
-    _info[15]=0;
-    _info[16]=0;
-    _info[17]=0;
-    _info[18]=0;
-    _nrt=0;
+
+
     _continuous_system[0]->evaluateAll(IContinuous::ALL);
     _continuous_system[0]->getContinuousStates(_y);
 // begin analyzation mode
@@ -125,7 +85,6 @@ void CppDASSL::initialize()
     double delta=1e-6;
     double* _yphelp=new double[_dimSys];
     _time_system[0]->setTime(_tCurrent);
-    _jac=new sparsematrix_t(_dimSys,_dimSys,_dimSys*_dimSys);
     for(int i=0; i<_dimSys; ++i) {
         double _ysave;
         _ysave=_y[i];
@@ -136,15 +95,17 @@ void CppDASSL::initialize()
         for(int j=0; j<_dimSys; ++j) {
             if(_yphelp[j]-_yp[j]>1e-12) {
                 _countnz++;
-                (*_jac)(j,i)=(_yphelp[j]-_yp[j])/delta;
             }
         }
-        if(_countnz<_dimSys*_dimSys/100) {
-            _info[18]=1;
+        if(_countnz>_dimSys*_dimSys/100) {
+            dasslSolver.setSparse(false);
+            break;
         }
         _y[i]=_ysave;
     }
-
+    if(_countnz<_dimSys*_dimSys/100) {
+        dasslSolver.setSparse(true);
+    }
     delete [] _yphelp;
 }
 
@@ -166,11 +127,8 @@ void CppDASSL::solve(const SOLVERCALL action)
     _continuous_system[0]->getRHS(_yp);
     SolverDefaultImplementation::writeToFile(0, t, _h);
 
-    ddaskr_(&res,&_dimSys,&t,&_y[0],&_yp[0],&_tEnd,_info,&_rtol,&_atol,&_idid,_rwork,&_lrw,_iwork,&_liw,NULL,NULL,NULL,NULL,&_nrt,NULL);
-    while(_idid==-1) {
-        _info[0]=1;
-        ddaskr_(&res,&_dimSys,&t,&_y[0],&_yp[0],&_tEnd,_info,&_rtol,&_atol,&_idid,_rwork,&_lrw,_iwork,&_liw,NULL,NULL,NULL,NULL,&_nrt,NULL);
-    }
+    dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,NULL,NULL,NULL,NULL,0,0);
+
     _tCurrent=_tEnd;
     _time_system[0]->setTime(_tCurrent);
     _continuous_system[0]->setContinuousStates(_y);
