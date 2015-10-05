@@ -116,10 +116,10 @@ private:
 
 
 //   ISystemProperties* _properties;
-   IContinuous* _continuous_system[5];
+   IContinuous** _continuous_system;
 //   IEvent* _event_system;
 //   IMixedSystem* _mixed_system;
-   ITime* _time_system[5];
+   ITime** _time_system;
 
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;

@@ -1,6 +1,17 @@
 #pragma once
 #include "omp.h"
 #include <vector>
+#define BOOST_UBLAS_SHALLOW_ARRAY_ADAPTOR
+#include <Core/Utils/numeric/bindings/umfpack/umfpack.hpp>
+#include <Core/Utils/numeric/bindings/ublas/vector.hpp>
+#include <Core/Utils/numeric/bindings/ublas.hpp>
+#include <boost/numeric/ublas/io.hpp>
+namespace uBlas = boost::numeric::ublas;
+namespace umf = boost::numeric::bindings::umfpack;
+
+typedef uBlas::compressed_matrix<double, uBlas::column_major, 0, uBlas::unbounded_array<int>, uBlas::unbounded_array<double> > sparsematrix_t;
+typedef uBlas::shallow_array_adaptor<double> adaptor_t;
+typedef uBlas::vector<double, adaptor_t> shared_vector_t;
 
 typedef int (*UC_fp)(int *, double *, double *, double *, int *, double *, void *);
 typedef int (*S_fp)(const double *,const double *,const double *, double*, double *, int *, void *);
@@ -14,18 +25,21 @@ typedef int (*Jd_fp)(double *, double *, double *, double *, double *, void *);
 class dassl {
     public:
         dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6) {
-            omp_set_num_threads(num_threads);
             info.resize(20,0);
         }
         dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6) {
-            omp_set_num_threads(num_threads);
             info.resize(20,0);
         }
         dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6) {
-            omp_set_num_threads(num_threads);
             info.resize(20,0);
         }
         ~dassl() {
+            if(Symbolic)
+                delete Symbolic;
+            if(Numeric)
+                delete Numeric;
+            if(A)
+                delete A;
         }
         void setNumThreads(unsigned int num) {
             num_threads=num;
@@ -99,4 +113,7 @@ class dassl {
         double atol;
         unsigned int num_threads;
         bool sparse;
+        umf::symbolic_type<double>* Symbolic;
+        umf::numeric_type<double>* Numeric;
+        sparsematrix_t* A;
 };

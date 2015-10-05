@@ -807,8 +807,8 @@ static int c__926 = 926;
 
 /*               The tolerances are used by the code in a local error */
 /*               test at each step which requires roughly that */
-/*                        abs(local error in Y(i)) .le. EWT(i) , */
-/*               where EWT(i) = RTOL*abs(Y(i)) + ATOL is an error weight */
+/*                        std::abs(local error in Y(i)) .le. EWT(i) , */
+/*               where EWT(i) = RTOL*std::abs(Y(i)) + ATOL is an error weight */
 /*               quantity, for each vector component. */
 /*               (More specifically, a root-mean-square norm is used to */
 /*               measure the size of vectors, and the error test uses the */
@@ -970,7 +970,7 @@ static int c__926 = 926;
 /*           H is the step size.  CJ is a scalar, input to JAC, that is */
 /*           normally proportional to 1/H.  REWT is an array of */
 /*           reciprocal error weights, 1/EWT(i), where EWT(i) is */
-/*           RTOL*abs(Y(i)) + ATOL (unless you supplied routine DDAWTS */
+/*           RTOL*std::abs(Y(i)) + ATOL (unless you supplied routine DDAWTS */
 /*           instead), for use in JAC if needed.  For example, if JAC */
 /*           computes difference quotient approximations to partial */
 /*           derivatives, the REWT array may be useful in setting the */
@@ -2022,7 +2022,7 @@ L200:
     uround = std::numeric_limits<double>::epsilon();
     rwork[9] = uround;
 /* Computing MAX */
-    d__1 = abs(*t), d__2 = abs(*tout);
+    d__1 = std::abs(*t), d__2 = std::abs(*tout);
     hmin = uround * 4. * std::max(d__1,d__2);
 
 /*     Set/check STPTOL control for initial condition calculation. */
@@ -2047,7 +2047,7 @@ L200:
 
 /*     Check initial interval to see that it is long enough. */
 
-    tdist = (d__1 = *tout - *t, abs(d__1));
+    tdist = (d__1 = *tout - *t, std::abs(d__1));
     if (tdist < hmin) {
 	goto L714;
     }
@@ -2084,7 +2084,7 @@ L320:
     if (info[7] == 0) {
 	goto L330;
     }
-    rh = abs(h0) / rwork[2];
+    rh = std::abs(h0) / rwork[2];
     if (rh > 1.) {
 	h0 /= rh;
     }
@@ -2213,7 +2213,7 @@ L355:
 
 L360:
     if (info[7] != 0) {
-	rh = abs(h0) / rwork[2];
+	rh = std::abs(h0) / rwork[2];
 	if (rh > 1.) {
 	    h0 /= rh;
 	}
@@ -2300,7 +2300,7 @@ L405:
     if (info[7] == 0) {
 	goto L410;
     }
-    rh = abs(h__) / rwork[2];
+    rh = std::abs(h__) / rwork[2];
     if (rh > 1.) {
 	h__ /= rh;
     }
@@ -2397,7 +2397,7 @@ L450:
 
 /*     Check whether we are within roundoff of TSTOP. */
 
-    if ((d__1 = tn - tstop, abs(d__1)) > uround * 100. * (abs(tn) + abs(h__)))
+    if ((d__1 = tn - tstop, std::abs(d__1)) > uround * 100. * (std::abs(tn) + std::abs(h__)))
 	     {
 	goto L460;
     }
@@ -2540,12 +2540,12 @@ L525:
 /*     Compute minimum stepsize. */
 
 /* Computing MAX */
-    d__1 = abs(tn), d__2 = abs(*tout);
+    d__1 = std::abs(tn), d__2 = std::abs(*tout);
     hmin = uround * 4. * std::max(d__1,d__2);
 
 /*     Test H vs. HMAX */
     if (info[7] != 0) {
-	rh = abs(h__) / rwork[2];
+	rh = std::abs(h__) / rwork[2];
 	if (rh > 1.) {
 	    h__ /= rh;
 	}
@@ -2623,7 +2623,7 @@ L530:
 	goto L550;
     }
 /*     Stopping tests for the TSTOP case, interval-output mode. --------- */
-    if ((d__1 = tn - tstop, abs(d__1)) <= uround * 100. * (abs(tn) + abs(h__))
+    if ((d__1 = tn - tstop, std::abs(d__1)) <= uround * 100. * (std::abs(tn) + std::abs(h__))
 	    ) {
 	ddatrp_(&tn, &tstop, &y[1], &yprime[1], neq, &iwork[8], &rwork[lphi],
 		&rwork[39]);
@@ -2647,7 +2647,7 @@ L530:
 
 L550:
 /*     Stopping tests for the TSTOP case, intermediate-output mode. ----- */
-    if ((d__1 = tn - tstop, abs(d__1)) <= uround * 100. * (abs(tn) + abs(h__))
+    if ((d__1 = tn - tstop, std::abs(d__1)) <= uround * 100. * (std::abs(tn) + std::abs(h__))
 	    ) {
 	ddatrp_(&tn, &tstop, &y[1], &yprime[1], neq, &iwork[8], &rwork[lphi],
 		&rwork[39]);
@@ -3141,7 +3141,7 @@ L760:
 /* L10: */
 	jroot[i__] = 0;
     }
-    hminr = (abs(*tn) + abs(h__)) * *uround * 100.;
+    hminr = (std::abs(*tn) + std::abs(h__)) * *uround * 100.;
 
     switch (*job) {
 	case 1:  goto L100;
@@ -3159,7 +3159,7 @@ L100:
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
 /* L110: */
-	if ((d__1 = r0[i__], abs(d__1)) == zero) {
+	if ((d__1 = r0[i__], std::abs(d__1)) == zero) {
 	    zroot = TRUE_;
 	}
     }
@@ -3168,7 +3168,7 @@ L100:
     }
 /* R has a zero at T.  Look at R at T + (small increment). -------------- */
 /* Computing MAX */
-    d__1 = hminr / abs(h__);
+    d__1 = hminr / std::abs(h__);
     temp2 = std::max(d__1,.1);
     temp1 = temp2 * h__;
     rwork[51] += temp1;
@@ -3183,7 +3183,7 @@ L100:
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
 /* L130: */
-	if ((d__1 = r0[i__], abs(d__1)) == zero) {
+	if ((d__1 = r0[i__], std::abs(d__1)) == zero) {
 	    zroot = TRUE_;
 	}
     }
@@ -3209,7 +3209,7 @@ L200:
     zroot = FALSE_;
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
-	if ((d__1 = r0[i__], abs(d__1)) == zero) {
+	if ((d__1 = r0[i__], std::abs(d__1)) == zero) {
 	    zroot = TRUE_;
 	    jroot[i__] = 1;
 	}
@@ -3239,7 +3239,7 @@ L240:
     ++iwork[36];
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
-	if ((d__1 = r0[i__], abs(d__1)) > zero) {
+	if ((d__1 = r0[i__], std::abs(d__1)) > zero) {
 	    goto L250;
 	}
 /* If Ri has a zero at both T0+ and T0, return an error flag. ----------- */
@@ -3435,7 +3435,7 @@ L390:
     zroot = FALSE_;
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
-	if ((d__1 = r1[i__], abs(d__1)) > zero) {
+	if ((d__1 = r1[i__], std::abs(d__1)) > zero) {
 	    goto L110;
 	}
 	zroot = TRUE_;
@@ -3445,7 +3445,7 @@ L110:
 	if (d_sign(&c_b758, &r0[i__]) == d_sign(&c_b758, &r1[i__])) {
 	    goto L120;
 	}
-	t2 = (d__1 = r1[i__] / (r1[i__] - r0[i__]), abs(d__1));
+	t2 = (d__1 = r1[i__] / (r1[i__] - r0[i__]), std::abs(d__1));
 	if (t2 <= tmax) {
 	    goto L120;
 	}
@@ -3490,8 +3490,8 @@ L170:
     alpha *= 2.;
 L180:
     x2 = *x1 - (*x1 - *x0) * r1[imax] / (r1[imax] - alpha * r0[imax]);
-    if ((d__1 = x2 - *x0, abs(d__1)) < half * *hmin) {
-	fracint = (d__1 = *x1 - *x0, abs(d__1)) / *hmin;
+    if ((d__1 = x2 - *x0, std::abs(d__1)) < half * *hmin) {
+	fracint = (d__1 = *x1 - *x0, std::abs(d__1)) / *hmin;
 	if (fracint > five) {
 	    fracsub = tenth;
 	} else {
@@ -3499,8 +3499,8 @@ L180:
 	}
 	x2 = *x0 + fracsub * (*x1 - *x0);
     }
-    if ((d__1 = *x1 - x2, abs(d__1)) < half * *hmin) {
-	fracint = (d__1 = *x1 - *x0, abs(d__1)) / *hmin;
+    if ((d__1 = *x1 - x2, std::abs(d__1)) < half * *hmin) {
+	fracint = (d__1 = *x1 - *x0, std::abs(d__1)) / *hmin;
 	if (fracint > five) {
 	    fracsub = tenth;
 	} else {
@@ -3520,7 +3520,7 @@ L200:
     zroot = FALSE_;
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
-	if ((d__1 = rx[i__], abs(d__1)) > zero) {
+	if ((d__1 = rx[i__], std::abs(d__1)) > zero) {
 	    goto L210;
 	}
 	zroot = TRUE_;
@@ -3530,7 +3530,7 @@ L210:
 	if (d_sign(&c_b758, &r0[i__]) == d_sign(&c_b758, &rx[i__])) {
 	    goto L220;
 	}
-	t2 = (d__1 = rx[i__] / (rx[i__] - r0[i__]), abs(d__1));
+	t2 = (d__1 = rx[i__] / (rx[i__] - r0[i__]), std::abs(d__1));
 	if (t2 <= tmax) {
 	    goto L220;
 	}
@@ -3574,7 +3574,7 @@ L260:
     last = 0;
     xroot = FALSE_;
 L270:
-    if ((d__1 = *x1 - *x0, abs(d__1)) <= *hmin) {
+    if ((d__1 = *x1 - *x0, std::abs(d__1)) <= *hmin) {
 	xroot = TRUE_;
     }
     goto L150;
@@ -3587,7 +3587,7 @@ L300:
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
 	jroot[i__] = 0;
-	if ((d__1 = r1[i__], abs(d__1)) == zero) {
+	if ((d__1 = r1[i__], std::abs(d__1)) == zero) {
 	    jroot[i__] = (int) (-d_sign(&c_b758, &r0[i__]));
 	    goto L320;
 	}
@@ -3612,7 +3612,7 @@ L400:
     i__1 = *nrt;
     for (i__ = 1; i__ <= i__1; ++i__) {
 	jroot[i__] = 0;
-	if ((d__1 = r1[i__], abs(d__1)) == zero) {
+	if ((d__1 = r1[i__], std::abs(d__1)) == zero) {
 	    jroot[i__] = (int) (-d_sign(&c_b758, &r0[i__]));
 	}
 /* L410: */
@@ -4135,7 +4135,7 @@ L230:
 
 /*     Compute variable stepsize error coefficient CK */
 
-    ck = (d__1 = alpha[kp1] + alphas - alpha0, abs(d__1));
+    ck = (d__1 = alpha[kp1] + alphas - alpha0, std::abs(d__1));
 /* Computing MAX */
     d__1 = ck, d__2 = alpha[kp1];
     ck = std::max(d__1,d__2);
@@ -4456,7 +4456,7 @@ L630:
     ++ncf;
     r__ = .25;
     *h__ *= r__;
-    if (ncf < 10 && abs(*h__) >= *hmin) {
+    if (ncf < 10 && std::abs(*h__) >= *hmin) {
 	goto L690;
     }
     if (*idid == 1) {
@@ -4492,7 +4492,7 @@ L660:
     d__1 = .25, d__2 = std::min(.9,r__);
     r__ = std::max(d__1,d__2);
     *h__ *= r__;
-    if (abs(*h__) >= *hmin) {
+    if (std::abs(*h__) >= *hmin) {
 	goto L690;
     }
     *idid = -6;
@@ -4509,7 +4509,7 @@ L665:
     *k = knew;
     r__ = .25;
     *h__ = r__ * *h__;
-    if (abs(*h__) >= *hmin) {
+    if (std::abs(*h__) >= *hmin) {
 	goto L690;
     }
     *idid = -6;
@@ -4522,7 +4522,7 @@ L670:
     *k = 1;
     r__ = .25;
     *h__ = r__ * *h__;
-    if (abs(*h__) >= *hmin) {
+    if (std::abs(*h__) >= *hmin) {
 	goto L690;
     }
     *idid = -6;
@@ -4653,7 +4653,7 @@ L690:
     for (i__ = 1; i__ <= i__1; ++i__) {
 
 	if (icnstr[i__] == 2) {
-	    rdy = (d__1 = (ynew[i__] - y[i__]) / y[i__], abs(d__1));
+	    rdy = (d__1 = (ynew[i__] - y[i__]) / y[i__], std::abs(d__1));
 	    if (rdy > rdymx) {
 		rdymx = rdy;
 		*ivar = i__;
@@ -4682,7 +4682,7 @@ L690:
 	    }
 
 	} else if (icnstr[i__] == -2) {
-	    rdy = (d__1 = (ynew[i__] - y[i__]) / y[i__], abs(d__1));
+	    rdy = (d__1 = (ynew[i__] - y[i__]) / y[i__], std::abs(d__1));
 	    if (rdy > rdymx) {
 		rdymx = rdy;
 		*ivar = i__;
@@ -4838,7 +4838,7 @@ L690:
 	rtoli = rtol[i__];
 	atoli = atol[i__];
 L10:
-	wt[i__] = rtoli * (d__1 = y[i__], abs(d__1)) + atoli;
+	wt[i__] = rtoli * (d__1 = y[i__], std::abs(d__1)) + atoli;
 /* L20: */
     }
     return 0;
@@ -5015,8 +5015,8 @@ double dassl::ddwnrm_(int *neq, double *v, double *rwt, void *par)
     vmax = 0.;
     i__1 = *neq;
     for (i__ = 1; i__ <= i__1; ++i__) {
-	if ((d__1 = v[i__] * rwt[i__], abs(d__1)) > vmax) {
-	    vmax = (d__2 = v[i__] * rwt[i__], abs(d__2));
+	if ((d__1 = v[i__] * rwt[i__], std::abs(d__1)) > vmax) {
+	    vmax = (d__2 = v[i__] * rwt[i__], std::abs(d__2));
 	}
 /* L10: */
     }
@@ -5205,8 +5205,7 @@ L300:
 /*        Call RES, reevaluate the Jacobian, and try again. */
 
 	++iwm[12];
-	(*res)(x, &y[1], &yprime[1], cj, &delta[1], &ires, par)
-		;
+	(*res)(x, &y[1], &yprime[1], cj, &delta[1], &ires, par);
 	if (ires < 0) {
 	    goto L370;
 	}
@@ -5356,7 +5355,7 @@ L380:
     delnrm = ddwnrm_(neq, &delta[1], &wt[1], par);
     fnrm = delnrm;
     if (*tscale > 0.) {
-	fnrm = fnrm * *tscale * abs(*cj);
+	fnrm = fnrm * *tscale * std::abs(*cj);
     }
     if (fnrm <= *epcon) {
 	return 0;
@@ -5718,7 +5717,7 @@ L200:
 /* ----------------------------------------------------------------------- */
     *fnorm = ddwnrm_(neq, &r__[1], &wt[1], par);
     if (*tscale > 0.) {
-	*fnorm = *fnorm * *tscale * abs(*cj);
+	*fnorm = *fnorm * *tscale * std::abs(*cj);
     }
 
     return 0;
@@ -6277,20 +6276,19 @@ L380:
 {
     /* System generated locals */
     int i__1, i__2, i__3, i__4, i__5;
-    double d__1, d__2, d__3, d__4, d__5, d__6;
+
 
     /* Builtin functions */
     double sqrt(double), d_sign(double *, double *);
 
     /* Local variables */
     static int i__, j, k, l, n, i1, i2, ii, mba;
-    static double del;
+
     static int meb1, nrow;
     static double squr;
     static int mband, lenpd, isave, msave;
     static double ysave;
     static int lipvt, mtype, meband;
-    static double delinv;
     static int ipsave;
     static double ypsave;
 
@@ -6372,7 +6370,7 @@ L380:
     switch (mtype) {
 	case 1:  goto L100;
 	case 2:  goto L200;
-	case 3:  goto L300;
+	case 3:  return 0;
 	case 4:  goto L400;
 	case 5:  goto L500;
     }
@@ -6395,52 +6393,93 @@ L100:
 
 L200:
     *ires = 0;
-    nrow = 0;
     squr = sqrt(*uround);
     i__1 = *neq;
-#pragma omp parallel for
-    for (i__ = 1; i__ <= i__1; ++i__) {
-/* Computing MAX */
-/* Computing MAX */
-        d__5 = (d__1 = y[i__], abs(d__1)), d__6 = (d__2 = *h__ * yprime[i__],
-            abs(d__2));
-        d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__];
-        del = std::max(d__3,d__4);
-        d__1 = *h__ * yprime[i__];
-        del = d_sign(&del, &d__1);
-        del = y[i__] + del - y[i__];
-        ysave = y[i__];
-        ypsave = yprime[i__];
-        y[i__] += del;
-        yprime[i__] += *cj * del;
-        ++iwm[12];
-        (*res)(x, &y[1], &yprime[1], cj, &e[1], ires, par);
-//        if (*ires < 0) {
-//            return 0;
-//        }
-        delinv = 1. / del;
-        i__2 = *neq;
-        for (l = 1; l <= i__2; ++l) {
-    /* L220: */
-            wm[nrow + l] = (e[l] - delta[l]) * delinv;
-        }
-        nrow += *neq;
-        y[i__] = ysave;
-        yprime[i__] = ypsave;
-/* L210: */
-    }
+    i__2 = *neq;
 
+if(sparse) {
+    std::cout<<"USING SPARSE"<<std::endl;
+    sparsematrix_t* Asub=new sparsematrix_t[num_threads];
+    for(int j=0; j<num_threads; ++j) Asub[j].resize(*neq,*neq,false);
+    #pragma omp parallel for num_threads(num_threads) schedule(static)
+        for (int i__ = 0; i__ < i__1; ++i__) {
+    /* Computing MAX */
+    /* Computing MAX */
+            int threadnum=omp_get_thread_num();
+            double d__1,d__2;
+            double d__5 = (d__1 = y[i__+1], std::abs(d__1)), d__6 = (d__2 = *h__ * yprime[i__+1], std::abs(d__2));
+            double d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__+1];
+            double del = std::max(d__3,d__4);
+            d__1 = *h__ * yprime[i__+1];
+            del = d_sign(&del, &d__1);
+            del = y[i__+1] + del - y[i__+1];
+            std::vector<double> ywork(y+1,y+ (*neq)+1);
+            std::vector<double> ypwork(yprime+1, yprime+(*neq)+1);
+            std::vector<double> e(*neq);
+            ywork[i__] += del;
+            ypwork[i__] += *cj * del;
+
+            (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
+    //        if (*ires < 0) {
+    //            return 0;
+    //        }
+            double delinv = 1. / del;
+
+            for (l = 1; l <= i__2; ++l) {
+        /* L220: */
+                double val = (e[l-1] - delta[l]) * delinv;
+                if(std::abs(val)>1e-12) Asub[threadnum](l-1,i__)=val;
+            }
+
+    /* L210: */
+        }
+        A->clear();
+        for(int j=0; j<num_threads; ++j) *A=*A+Asub[j];
+    delete [] Asub;
+} else {
+    #pragma omp parallel for num_threads(num_threads) schedule(static)
+        for (int i__ = 0; i__ < i__1; ++i__) {
+    /* Computing MAX */
+    /* Computing MAX */
+            double d__1,d__2;
+            double d__5 = (d__1 = y[i__+1], std::abs(d__1)), d__6 = (d__2 = *h__ * yprime[i__+1], std::abs(d__2));
+            double d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__+1];
+            double del = std::max(d__3,d__4);
+            d__1 = *h__ * yprime[i__+1];
+            del = d_sign(&del, &d__1);
+            del = y[i__+1] + del - y[i__+1];
+            std::vector<double> ywork(y+1,y+ (*neq)+1);
+            std::vector<double> ypwork(yprime+1, yprime+(*neq)+1);
+            std::vector<double> e(*neq);
+            ywork[i__] += del;
+            ypwork[i__] += *cj * del;
+
+            (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
+    //        if (*ires < 0) {
+    //            return 0;
+    //        }
+            double delinv = 1. / del;
+
+            for (l = 1; l <= i__2; ++l) {
+        /* L220: */
+                wm[ i__*(*neq) + l] = (e[l-1] - delta[l]) * delinv;
+            }
+
+    /* L210: */
+        }
+}
+iwm[12]+=(*neq);
 
 /*     Do dense-matrix LU decomposition on J. */
 L230:
-    dgetrf_(neq, neq, &wm[1], neq, &iwm[lipvt], ier);
+    if(sparse) {
+        umf::symbolic(*A, *Symbolic);
+        umf::numeric (*A, *Symbolic, *Numeric);
+    } else {
+        dgetrf_(neq, neq, &wm[1], neq, &iwm[lipvt], ier);
+    }
     return 0;
 
-
-/*     Dummy section for IWM(MTYPE)=3. */
-
-L300:
-    return 0;
 
 
 /*     Banded user-supplied matrix. */
@@ -6460,6 +6499,7 @@ L400:
 /*     Banded finite-difference-generated matrix. */
 
 L500:
+    double d__1, d__2, d__3, d__4, d__5, d__6,del,delinv;
     mband = iwm[1] + iwm[2] + 1;
     mba = std::min(mband,*neq);
     meband = mband + iwm[1];
@@ -6479,8 +6519,8 @@ L500:
 	    wm[ipsave + k] = yprime[n];
 /* Computing MAX */
 /* Computing MAX */
-	    d__5 = (d__1 = y[n], abs(d__1)), d__6 = (d__2 = *h__ * yprime[n],
-		    abs(d__2));
+	    d__5 = (d__1 = y[n], std::abs(d__1)), d__6 = (d__2 = *h__ * yprime[n],
+		    std::abs(d__2));
 	    d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[n];
 	    del = std::max(d__3,d__4);
 	    d__1 = *h__ * yprime[n];
@@ -6503,8 +6543,8 @@ L500:
 	    yprime[n] = wm[ipsave + k];
 /* Computing MAX */
 /* Computing MAX */
-	    d__5 = (d__1 = y[n], abs(d__1)), d__6 = (d__2 = *h__ * yprime[n],
-		    abs(d__2));
+	    d__5 = (d__1 = y[n], std::abs(d__1)), d__6 = (d__2 = *h__ * yprime[n],
+		    std::abs(d__2));
 	    d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[n];
 	    del = std::max(d__3,d__4);
 	    d__1 = *h__ * yprime[n];
@@ -6576,7 +6616,22 @@ L550:
     lipvt = iwm[30];
     mtype = iwm[4];
     switch (mtype) {
-        case 1:  case 2: dgetrs_(&trans, neq, &c__1, &wm[1], neq, &iwm[lipvt], &delta[1], neq, &info, (int)1); break;
+        case 1:  case 2:
+            if(sparse) {
+                ++delta;
+                std::vector<double> _x(*neq);
+                adaptor_t rhs_adaptor(*neq,delta);
+                shared_vector_t b(*neq,rhs_adaptor);
+
+                adaptor_t x_adaptor(*neq,&_x[0]);
+                shared_vector_t x(*neq,x_adaptor);
+                umf::solve (*A, x, b, *Numeric);
+
+                std::copy(&_x[0], &_x[0]+(*neq), delta);
+            } else {
+                dgetrs_(&trans, neq, &c__1, &wm[1], neq, &iwm[lipvt], &delta[1], neq, &info, (int)1);
+            }
+            break;
         case 4:  case 5:  meband = (iwm[1] << 1) + iwm[2] + 1; dgbtrs_(&trans, neq, &iwm[1], &iwm[2], &c__1, &wm[1], &meband, &iwm[lipvt], &delta[1], neq, &info, (int)1); break;
     }
 
@@ -7362,7 +7417,7 @@ L200:
 /* ----------------------------------------------------------------------- */
     *fnorm = ddwnrm_(neq, &r__[1], &wt[1], par);
     if (*tscale > 0.) {
-	*fnorm = *fnorm * *tscale * abs(*cj);
+	*fnorm = *fnorm * *tscale * std::abs(*cj);
     }
 
     return 0;
@@ -8386,7 +8441,7 @@ L115:
 /* be computed, and its norm used in the calculation of RHO. */
 /* ----------------------------------------------------------------------- */
 	prod *= q[ll * 2];
-	rho = (d__1 = prod * rnrm, abs(d__1));
+	rho = (d__1 = prod * rnrm, std::abs(d__1));
 	if (ll > *kmp && *kmp < *maxl) {
 	    if (ll == *kmp + 1) {
 		dcopy_(neq, &v[v_dim1 + 1], &c__1, &dl[1], &c__1);
@@ -8965,7 +9020,7 @@ L20:
 	s = 0.;
 	goto L50;
 L30:
-	if (abs(t2) < abs(t1)) {
+	if (std::abs(t2) < std::abs(t1)) {
 	    goto L40;
 	}
 	t = t1 / t2;
@@ -9021,7 +9076,7 @@ L70:
     s = 0.;
     goto L130;
 L110:
-    if (abs(t2) < abs(t1)) {
+    if (std::abs(t2) < std::abs(t1)) {
 	goto L120;
     }
     t = t1 / t2;
@@ -9176,6 +9231,12 @@ int dassl::xerrwd_(int *nerr, int
 } /* xerrwd_ */
 
 int dassl::solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int nrt, int jroot) {
+    if(sparse) {
+        Symbolic=new umf::symbolic_type<double>;
+        Numeric=new umf::numeric_type<double>;
+        A=new sparsematrix_t(_dimSys,_dimSys);
+    }
+
     rwork.resize(60+9*_dimSys+_dimSys*_dimSys);
     lrw=60+9*_dimSys+_dimSys*_dimSys;
     iwork.resize(40+_dimSys);

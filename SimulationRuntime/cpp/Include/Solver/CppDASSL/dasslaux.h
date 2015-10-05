@@ -3,11 +3,11 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
+
 #include "omp.h"
 
 #define TRUE_ (1)
 #define FALSE_ (0)
-#define abs(x) ((x) >= 0 ? (x) : -(x))
 
 
 

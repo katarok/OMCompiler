@@ -50,7 +50,18 @@ public:
 
     virtual shared_ptr<ISolver> createSolver(IMixedSystem* system, string solvername, shared_ptr<ISolverSettings> solver_settings)
     {
+        if(solvername.compare("cppdassl")==0)
+        {
+            PATH cppdassl_path = ObjectFactory<CreationPolicy>::_library_path;
+            PATH cppdassl_name(CPPDASSL_LIB);
+            cppdassl_path/=cppdassl_name;
+            LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(cppdassl_path.string(),*_solver_type_map);
+            if (result != LOADER_SUCCESS)
+            {
+                throw ModelicaSimulationError(MODEL_FACTORY,"Failed loading CppDASSL solver library!");
+            }
 
+        }
         if(solvername.compare("euler")==0)
         {
              PATH euler_path = ObjectFactory<CreationPolicy>::_library_path;

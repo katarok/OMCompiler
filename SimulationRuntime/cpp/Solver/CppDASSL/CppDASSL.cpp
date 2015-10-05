@@ -50,24 +50,30 @@ CppDASSL::~CppDASSL()
     delete [] _y;
   if (_yp)
     delete [] _yp;
+  if(_continuous_system) {
+    delete [] _continuous_system;
+  }
 }
 
 void CppDASSL::initialize()
 {
     IContinuous *continuous_system = dynamic_cast<IContinuous*>(_system);
     ITime *time_system =  dynamic_cast<ITime*>(_system);
-    _time_system[0] = time_system;
+    int numThreads=_cppdasslsettings->getGlobalSettings()->getSolverThreads();
+    dasslSolver.setNumThreads(numThreads);
+    _continuous_system = new IContinuous*[numThreads];
+    _time_system = new ITime*[numThreads];
     _continuous_system[0] = continuous_system;
-/*
-    for(int i = 1; i < 5; i++)
+    _time_system[0] = time_system;
+
+    for(int i = 1; i < numThreads; i++)
     {
         IMixedSystem* clonedSystem = _system->clone();
         _continuous_system[i] = dynamic_cast<IContinuous*>(clonedSystem);
         _time_system[i] = dynamic_cast<ITime*>(clonedSystem);
         dynamic_cast<ISystemInitialization*>(clonedSystem)->initialize();
-    }*/
+    }
 
-    dasslSolver.setNumThreads(_cppdasslsettings->getGlobalSettings()->getSolverThreads());
     SolverDefaultImplementation::initialize();
     _dimSys = _continuous_system[0]->getDimContinuousStates();
     _y = new double[_dimSys];
@@ -195,10 +201,11 @@ int CppDASSL::res(const double* t, const double* y, const double* yprime, double
 }
 
 int CppDASSL::calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires) {
-    _time_system[0]->setTime(*t);
-    _continuous_system[0]->setContinuousStates(y);
-    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-    _continuous_system[0]->getRHS(delta);
+    int numThread=omp_get_thread_num();
+    _time_system[numThread]->setTime(*t);
+    _continuous_system[numThread]->setContinuousStates(y);
+    _continuous_system[numThread]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_system[numThread]->getRHS(delta);
     for(int i=0; i<_dimSys; ++i) delta[i]=yprime[i]-delta[i];
     return 0;
 }
