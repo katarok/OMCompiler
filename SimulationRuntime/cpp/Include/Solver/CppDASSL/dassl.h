@@ -13,24 +13,23 @@ typedef uBlas::compressed_matrix<double, uBlas::column_major, 0, uBlas::unbounde
 typedef uBlas::shallow_array_adaptor<double> adaptor_t;
 typedef uBlas::vector<double, adaptor_t> shared_vector_t;
 
-typedef int (*UC_fp)(int *, double *, double *, double *, int *, double *, void *);
+typedef int (*UC_fp)(const int *, const double *, const double *, const double *, int *, double *, void *);
 typedef int (*S_fp)(const double *,const double *,const double *, double*, double *, int *, void *);
 typedef int (*P_fp)(int *, double *, double *, double *, double *, double *, double *, double *, double *, int *, double *, double *, int *, void *);
 typedef int (*J_fp)(S_fp, int *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, void *);
 typedef int (*Ja_fp)(double *, int *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, void *);
-typedef int (*Nl_fp)(double *, double *, double *, int *, S_fp, Ja_fp, P_fp, double *, double *, int *, int *, void *, double *, double *, double *, double *, double *, double *, int *, double *, double *, double *,
-                    double *, double *, double *, double *, double *, double *, int *, int *, int *, int *, int *, int *);
+typedef int (*Nl_fp)(double *, double *, double *, int *, S_fp, Ja_fp, P_fp, double *, double *, int *, int *, void *, double *, double *, double *, double *, double *, double *, int *, double *, double *, double *, double *, double *, double *, double *, double *, double *, int *, int *, int *, int *, int *, int *);
 typedef int (*Jd_fp)(double *, double *, double *, double *, double *, void *);
 
 class dassl {
     public:
-        dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6) {
+        dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0) {
             info.resize(20,0);
         }
-        dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6) {
+        dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0) {
             info.resize(20,0);
         }
-        dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6) {
+        dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6), loglevel(0) {
             info.resize(20,0);
         }
         ~dassl() {
@@ -44,6 +43,9 @@ class dassl {
         void setNumThreads(unsigned int num) {
             num_threads=num;
         }
+        void setLogLevel(unsigned int num) {
+            loglevel=num;
+        }
         void setSparse(bool sparse) {
             this->sparse=sparse;
         }
@@ -53,7 +55,14 @@ class dassl {
         void setRTol(double rtol) {
             this->rtol=rtol;
         }
-        int solve(S_fp res, int _dimSys, double t, double *y, double *yprime, double tout, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int nrt, int jroot);
+        void setDenseOutput(bool dense) {
+            if(dense) {
+                info[2]=1;
+            } else {
+                info[2]=0;
+            }
+        }
+        int solve(S_fp res, int& _dimSys, double& t, double *y, double *yprime, double& tout, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int& nrt, int* jroot, bool cont);
     private:
         int ddaskr_(S_fp res, int *neq, double *t, double *y, double *yprime, double *tout, int *info, double *rtol, double *atol, int *idid, double *rwork, int *lrw, int *iwork, int *liw, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int *nrt, int *jroot);
         int dmatd_(int *neq, double *x, double *y, double *yprime, double *delta, double *cj, double * h__, int *ier, double *ewt, double *e, double *wm, int *iwm, S_fp res, int *ires, double *uround, Jd_fp jacd, void *par);
@@ -112,6 +121,7 @@ class dassl {
         double rtol;
         double atol;
         unsigned int num_threads;
+        unsigned int loglevel;
         bool sparse;
         umf::symbolic_type<double>* Symbolic;
         umf::numeric_type<double>* Numeric;

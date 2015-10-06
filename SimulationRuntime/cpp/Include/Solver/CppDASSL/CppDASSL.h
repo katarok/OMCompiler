@@ -89,15 +89,16 @@ private:
     *_y,
     *_yp;
   int
-    _dimSys;                 ///< Input       - (total) Dimension of system (=number of ODE)
-
+    _dimSys,               ///< Input       - (total) Dimension of system (=number of ODE)
+    _dimZeroFunc,
+    *_jroot;
   void
     *_data;
 
   static int res(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires, void *par);
   int calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires);
-
-
+  static int zeroes(const int* NEQ, const double* T, const double* Y, const double* YP, int* NRT, double* RVAL, void *par);
+  void giveZeroVal(const double &t, const double *y, double *zeroValue);
   // Variables for Coloured Jacobians
 //  int  _sizeof_sparsePattern_colorCols;
 //  int* _sparsePattern_colorCols;
@@ -120,7 +121,8 @@ private:
 //   IEvent* _event_system;
 //   IMixedSystem* _mixed_system;
    ITime** _time_system;
-
+   IEvent* _event_system;
+   IMixedSystem* _mixed_system;
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
 

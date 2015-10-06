@@ -62,7 +62,7 @@ public:
             }
 
         }
-        if(solvername.compare("euler")==0)
+        else if(solvername.compare("euler")==0)
         {
              PATH euler_path = ObjectFactory<CreationPolicy>::_library_path;
             PATH euler_name(EULER_LIB);
