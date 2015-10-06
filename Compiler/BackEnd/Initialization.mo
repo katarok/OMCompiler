@@ -107,12 +107,16 @@ algorithm
     //if Flags.isSet(Flags.DUMP_INITIAL_SYSTEM) then
     //  BackendDump.dumpBackendDAE(dae, "inlineWhenForInitialization");
     //end if;
+    SimCodeFunctionUtil.execStat("inlineWhenForInitialization (initialization)");
 
     (initVars, outPrimaryParameters, outAllPrimaryParameters) := selectInitializationVariablesDAE(dae);
     //if Flags.isSet(Flags.DUMP_INITIAL_SYSTEM) then
     //  BackendDump.dumpVariables(initVars, "selected initialization variables");
     //end if;
+    SimCodeFunctionUtil.execStat("selectInitializationVariablesDAE (initialization)");
+
     hs := collectPreVariables(dae);
+    SimCodeFunctionUtil.execStat("collectPreVariables (initialization)");
 
     // collect vars and eqns for initial system
     vars := BackendVariable.emptyVars();
@@ -123,17 +127,18 @@ algorithm
     ((vars, fixvars, eqns, _)) := BackendVariable.traverseBackendDAEVars(dae.shared.aliasVars, introducePreVarsForAliasVariables, (vars, fixvars, eqns, hs));
     ((vars, fixvars, eqns, _)) := BackendVariable.traverseBackendDAEVars(dae.shared.knownVars, collectInitialVars, (vars, fixvars, eqns, hs));
     ((eqns, reeqns)) := BackendEquation.traverseEquationArray(dae.shared.initialEqs, collectInitialEqns, (eqns, reeqns));
-
     //if Flags.isSet(Flags.DUMP_INITIAL_SYSTEM) then
     //  BackendDump.dumpEquationArray(eqns, "initial equations");
     //end if;
+    SimCodeFunctionUtil.execStat("collectInitialEqns (initialization)");
 
     ((vars, fixvars, eqns, reeqns, _)) := List.fold(dae.eqs, collectInitialVarsEqnsSystem, ((vars, fixvars, eqns, reeqns, hs)));
-
     ((eqns, reeqns)) := BackendVariable.traverseBackendDAEVars(vars, collectInitialBindings, (eqns, reeqns));
+    SimCodeFunctionUtil.execStat("collectInitialBindings (initialization)");
 
     // replace initial(), sample(...), delay(...) and homotopy(...)
     useHomotopy := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(eqns, simplifyInitialFunctions, false);
+    SimCodeFunctionUtil.execStat("simplifyInitialFunctions (initialization)");
 
     vars := BackendVariable.rehashVariables(vars);
     fixvars := BackendVariable.rehashVariables(fixvars);
@@ -142,12 +147,13 @@ algorithm
     shared := BackendDAEUtil.setSharedKnVars(shared, fixvars);
     shared := BackendDAEUtil.setSharedOptimica(shared, dae.shared.constraints, dae.shared.classAttrs);
     shared := BackendDAEUtil.setSharedFunctionTree(shared, dae.shared.functionTree);
+    SimCodeFunctionUtil.execStat("setup shared object (initialization)");
 
     // generate initial system and pre-balance it
     initsyst := BackendDAEUtil.createEqSystem(vars, eqns);
     initsyst := BackendDAEUtil.setEqSystRemovedEqns(initsyst, reeqns);
     (initsyst, dumpVars) := preBalanceInitialSystem(initsyst);
-    SimCodeFunctionUtil.execStat("created initial system");
+    SimCodeFunctionUtil.execStat("preBalanceInitialSystem (initialization)");
 
     // split the initial system into independend subsystems
     initdae := BackendDAE.DAE({initsyst}, shared);
@@ -158,7 +164,7 @@ algorithm
 
     (systs, shared) := BackendDAEOptimize.partitionIndependentBlocksHelper(initsyst, shared, Error.getNumErrorMessages(), true);
     initdae := BackendDAE.DAE(systs, shared);
-    SimCodeFunctionUtil.execStat("partitioned initial system");
+    SimCodeFunctionUtil.execStat("partitionIndependentBlocks (initialization)");
 
     if Flags.isSet(Flags.OPT_DAE_DUMP) then
       print(stringAppendList({"\npartitioned initial system:\n\n"}));
@@ -167,8 +173,9 @@ algorithm
     // initdae := BackendDAE.DAE({initsyst}, shared);
 
     // fix over- and under-constrained subsystems
-    (initdae, dumpVars2, removedEqns) := analyzeInitialSystem(initdae, dae, initVars);
+    (initdae, dumpVars2, removedEqns) := analyzeInitialSystem(initdae, initVars);
     dumpVars := listAppend(dumpVars, dumpVars2);
+    SimCodeFunctionUtil.execStat("analyzeInitialSystem (initialization)");
 
     // some debug prints
     if Flags.isSet(Flags.DUMP_INITIAL_SYSTEM) then
@@ -177,6 +184,7 @@ algorithm
 
     // now let's solve the system!
     initdae := BackendDAEUtil.mapEqSystem(initdae, solveInitialSystemEqSystem);
+    SimCodeFunctionUtil.execStat("solveInitialSystemEqSystem (initialization)");
 
     // transform and optimize DAE
     initOptModules := BackendDAEUtil.getInitOptModules(NONE());
@@ -1072,8 +1080,7 @@ end preBalanceInitialSystem2;
 
 protected function analyzeInitialSystem "author: lochel
   This function fixes discrete and state variables to balance the initial equation system."
-  input BackendDAE.BackendDAE initDAE;
-  input BackendDAE.BackendDAE inDAE "original DAE";
+  input BackendDAE.BackendDAE inInitDAE;
   input BackendDAE.Variables inInitVars;
   output BackendDAE.BackendDAE outDAE;
   output list<BackendDAE.Var> outDumpVars;
@@ -1086,16 +1093,17 @@ algorithm
   // filter empty systems
   eqs := {};
   outRemovedEqns := {};
-  for syst in initDAE.eqs loop
+  for syst in inInitDAE.eqs loop
     if BackendDAEUtil.nonEmptySystem(syst) then
       eqs := syst::eqs;
     else
       outRemovedEqns := listAppend(outRemovedEqns, BackendEquation.equationList(syst.orderedEqs));
+      outRemovedEqns := listAppend(outRemovedEqns, BackendEquation.equationList(syst.removedEqs));
     end if;
   end for;
-  dae := BackendDAE.DAE(eqs, initDAE.shared);
+  dae := BackendDAE.DAE(eqs, inInitDAE.shared);
 
-  (outDAE, (_, _, outDumpVars, outRemovedEqns)) := BackendDAEUtil.mapEqSystemAndFold(dae, analyzeInitialSystem2, (inDAE, inInitVars, {}, outRemovedEqns));
+  (outDAE, (_, outDumpVars, outRemovedEqns)) := BackendDAEUtil.mapEqSystemAndFold(dae, fixInitialSystem, (inInitVars, {}, outRemovedEqns));
 end analyzeInitialSystem;
 
 protected function getInitEqIndex
@@ -1111,85 +1119,19 @@ algorithm
   outTpl := (pos+1, lst);
 end getInitEqIndex;
 
-protected function analyzeInitialSystem2 "author: lochel"
-  input BackendDAE.EqSystem inEqSystem;
-  input BackendDAE.Shared inShared;
-  input tuple<BackendDAE.BackendDAE, BackendDAE.Variables, list<BackendDAE.Var>, list<BackendDAE.Equation>> inTpl;
-  output BackendDAE.EqSystem outEqSystem;
-  output BackendDAE.Shared outShared = inShared;
-  output tuple<BackendDAE.BackendDAE, BackendDAE.Variables, list<BackendDAE.Var>, list<BackendDAE.Equation>> outTpl;
-algorithm
-  outTpl := matchcontinue inTpl
-    local
-      BackendDAE.BackendDAE inDAE;
-      BackendDAE.EquationArray eqns2;
-      BackendDAE.Variables initVars;
-      list<BackendDAE.Var> dumpVars, dumpVars2;
-      list<BackendDAE.Equation> removedEqns, removedEqns2;
-
-    // (regular) determined system
-    case ((inDAE, initVars, dumpVars, removedEqns)) equation
-// print("index-0 start\n");
-      (eqns2, dumpVars2, removedEqns2) = fixInitialSystem(inEqSystem.orderedVars, inEqSystem.orderedEqs, initVars, inShared, 0);
-// print("index-0 ende\n");
-
-      // add dummy var + dummy eqn
-      dumpVars = listAppend(dumpVars, dumpVars2);
-      removedEqns = listAppend(removedEqns, removedEqns2);
-      outEqSystem = BackendDAEUtil.setEqSystEqs(inEqSystem, eqns2);
-    then ((inDAE, initVars, dumpVars, removedEqns));
-
-    // (index-1) mixed-determined system
-    case ((inDAE, initVars, dumpVars, removedEqns)) equation
-// print("index-1 start\n");
-      (eqns2, dumpVars2, removedEqns2) = fixInitialSystem(inEqSystem.orderedVars, inEqSystem.orderedEqs, initVars, inShared, 1);
-// print("index-1 ende\n");
-
-      // add dummy var + dummy eqn
-      dumpVars = listAppend(dumpVars, dumpVars2);
-      removedEqns = listAppend(removedEqns, removedEqns2);
-      outEqSystem = BackendDAEUtil.setEqSystEqs(inEqSystem, eqns2);
-    then ((inDAE, initVars, dumpVars, removedEqns));
-
-    // (index-2) mixed-determined system
-    case ((inDAE, initVars, dumpVars, removedEqns)) equation
-// print("index-2 start\n");
-      (eqns2, dumpVars2, removedEqns2) = fixInitialSystem(inEqSystem.orderedVars, inEqSystem.orderedEqs, initVars, inShared, 2);
-// print("index-2 ende\n");
-
-      // add dummy var + dummy eqn
-      dumpVars = listAppend(dumpVars, dumpVars2);
-      removedEqns = listAppend(removedEqns, removedEqns2);
-      outEqSystem = BackendDAEUtil.setEqSystEqs(inEqSystem, eqns2);
-    then ((inDAE, initVars, dumpVars, removedEqns));
-
-    // (index-3) mixed-determined system
-    case ((inDAE, initVars, dumpVars, removedEqns)) equation
-// print("index-3 start\n");
-      (eqns2, dumpVars2, removedEqns2) = fixInitialSystem(inEqSystem.orderedVars, inEqSystem.orderedEqs, initVars, inShared, 3);
-// print("index-3 ende\n");
-
-      // add dummy var + dummy eqn
-      dumpVars = listAppend(dumpVars, dumpVars2);
-      removedEqns = listAppend(removedEqns, removedEqns2);
-      outEqSystem = BackendDAEUtil.setEqSystEqs(inEqSystem, eqns2);
-    then ((inDAE, initVars, dumpVars, removedEqns));
-
-    else fail();
-  end matchcontinue;
-end analyzeInitialSystem2;
-
 protected function fixInitialSystem "author: lochel
   This function handles under-, over-, and mixed-determined systems with a given index."
-  input BackendDAE.Variables inVars;
-  input BackendDAE.EquationArray inEqns;
-  input BackendDAE.Variables inInitVars;
+  input BackendDAE.EqSystem inEqSystem;
   input BackendDAE.Shared inShared;
-  input Integer inIndex "index of the system (0 is regular)";
-  output BackendDAE.EquationArray outEqns;
-  output list<BackendDAE.Var> outDumpVars;
-  output list<BackendDAE.Equation> outRemovedEqns;
+  input tuple<BackendDAE.Variables, list<BackendDAE.Var>, list<BackendDAE.Equation>> inTpl;
+  output BackendDAE.EqSystem outEqSystem;
+  output BackendDAE.Shared outShared = inShared;
+  output tuple<BackendDAE.Variables, list<BackendDAE.Var>, list<BackendDAE.Equation>> outTpl;
 protected
+  BackendDAE.EquationArray eqns2;
+  BackendDAE.Variables initVars;
+  list<BackendDAE.Var> dumpVars, dumpVars2;
+  list<BackendDAE.Equation> removedEqns, removedEqns2;
   Integer nVars, nEqns, nInitEqs, nAddEqs, nAddVars;
   list<Integer> stateIndices, range, initEqsIndices, redundantEqns;
   list<BackendDAE.Var> initVarList;
@@ -1201,81 +1143,104 @@ protected
   BackendDAE.AdjacencyMatrixEnhanced me;
   array<Integer> mapIncRowEqn;
   Boolean perfectMatching;
+  Integer maxMixedDeterminedIndex = intMax(0, Flags.getConfigInt(Flags.MAX_MIXED_DETERMINED_INDEX));
 algorithm
-  // nVars = nEqns
-  nVars := BackendVariable.varsSize(inVars);
-  nEqns := BackendDAEUtil.equationSize(inEqns);
-  syst := BackendDAEUtil.createEqSystem(inVars, inEqns);
-  funcs := BackendDAEUtil.getFunctions(inShared);
-  (m_, _, _, mapIncRowEqn) := BackendDAEUtil.incidenceMatrixScalar(syst, BackendDAE.SOLVABLE(), SOME(funcs));
-//BackendDump.dumpEqSystem(syst, "fixInitialSystem");
-//BackendDump.dumpVariables(inInitVars, "selected initialization variables");
-//BackendDump.dumpIncidenceMatrix(m_);
+  for index in 0:maxMixedDeterminedIndex loop
+    //print("index-" + intString(index) + " start\n");
 
-  // get state-index list
-  stateIndices := BackendVariable.getVarIndexFromVariables(inInitVars, inVars);
-//print("{" + stringDelimitList(List.map(stateIndices, intString), ",") + "}\n");
+    ((initVars, dumpVars, removedEqns)) := inTpl;
 
-  // get initial equation-index list
-  //(initEqs, _) := List.extractOnTrue(BackendEquation.equationList(inEqns), BackendEquation.isInitialEquation);
-  //nInitEqs := BackendDAEUtil.equationSize(BackendEquation.listEquation(initEqs));
-  ((_, initEqsIndices)) := List.fold(BackendEquation.equationList(inEqns), getInitEqIndex, (1, {}));
-  nInitEqs := listLength(initEqsIndices);
-//print("{" + stringDelimitList(List.map(initEqsIndices, intString), ",") + "}\n");
+    // nVars = nEqns
+    nVars := BackendVariable.varsSize(inEqSystem.orderedVars);
+    nEqns := BackendDAEUtil.equationSize(inEqSystem.orderedEqs);
+    syst := BackendDAEUtil.createEqSystem(inEqSystem.orderedVars, inEqSystem.orderedEqs);
+    funcs := BackendDAEUtil.getFunctions(inShared);
+    (m_, _, _, mapIncRowEqn) := BackendDAEUtil.incidenceMatrixScalar(syst, BackendDAE.SOLVABLE(), SOME(funcs));
+    //BackendDump.dumpEqSystem(syst, "fixInitialSystem");
+    //BackendDump.dumpVariables(initVars, "selected initialization variables");
+    //BackendDump.dumpIncidenceMatrix(m_);
 
-  // modify incidence matrix for under-determined systems
-  nAddEqs := intMax(nVars-nEqns + inIndex, inIndex);
-//print("nAddEqs: " + intString(nAddEqs) + "\n");
-  m_ := fixUnderDeterminedSystem(m_, stateIndices, nEqns, nAddEqs);
-  m := arrayCopy(m_) "deep copy";
+    // get state-index list
+    stateIndices := BackendVariable.getVarIndexFromVariables(initVars, inEqSystem.orderedVars);
+    //print("{" + stringDelimitList(List.map(stateIndices, intString), ",") + "}\n");
 
-  // modify incidence matrix for over-determined systems
-  nAddVars := intMax(nEqns-nVars + inIndex, inIndex);
-//print("nAddVars: " + intString(nAddVars) + "\n");
-  m := fixOverDeterminedSystem(m, initEqsIndices, nVars, nAddVars);
+    // get initial equation-index list
+    //(initEqs, _) := List.extractOnTrue(BackendEquation.equationList(inEqSystem.orderedEqs), BackendEquation.isInitialEquation);
+    //nInitEqs := BackendDAEUtil.equationSize(BackendEquation.listEquation(initEqs));
+    ((_, initEqsIndices)) := List.fold(BackendEquation.equationList(inEqSystem.orderedEqs), getInitEqIndex, (1, {}));
+    nInitEqs := listLength(initEqsIndices);
+    //print("{" + stringDelimitList(List.map(initEqsIndices, intString), ",") + "}\n");
 
-  // match the system (nVars+nAddVars == nEqns+nAddEqs)
-  ass1 := arrayCreate(nVars+nAddVars, -1);
-  ass2 := arrayCreate(nEqns+nAddEqs, -1);
-  Matching.matchingExternalsetIncidenceMatrix(nVars+nAddVars, nEqns+nAddEqs, m);
-  BackendDAEEXT.matching(nVars+nAddVars, nEqns+nAddEqs, 5, 0, 0.0, 1);
-  BackendDAEEXT.getAssignment(ass2, ass1);
-  perfectMatching := listEmpty(Matching.getUnassigned(nVars+nAddVars, ass1, {}));
-  // (ass1, ass2, perfectMatching) := Matching.RegularMatching(m, nVars+nAddVars, nEqns+nAddEqs);
-  //BackendDump.dumpMatchingVars(ass1);
-  //BackendDump.dumpMatchingEqns(ass2);
+    // modify incidence matrix for under-determined systems
+    nAddEqs := intMax(nVars-nEqns + index, index);
+    //print("nAddEqs: " + intString(nAddEqs) + "\n");
+    m_ := fixUnderDeterminedSystem(m_, stateIndices, nEqns, nAddEqs);
+    m := arrayCopy(m_) "deep copy";
 
-  // check whether or not a complete matching was found
-  if not perfectMatching then
-    Error.addCompilerNotification("The given system is mixed-determined.   [index > " + intString(inIndex) + "]");
-    //BackendDump.dumpEqSystem(syst, "The given system is mixed-determined.   [index > " + intString(inIndex) + "]");
-    fail();
-  end if;
+    // modify incidence matrix for over-determined systems
+    nAddVars := intMax(nEqns-nVars + index, index);
+    //print("nAddVars: " + intString(nAddVars) + "\n");
+    m := fixOverDeterminedSystem(m, initEqsIndices, nVars, nAddVars);
 
-  // map artificial variables to redundant equations
-  range := if nAddVars > 0 then List.intRange2(nVars+1, nVars+nAddVars) else {};
-  redundantEqns := mapIndices(range, ass1);
-//print("{" + stringDelimitList(List.map(redundantEqns, intString), ",") + "}\n");
+    // match the system (nVars+nAddVars == nEqns+nAddEqs)
+    ass1 := arrayCreate(nVars+nAddVars, -1);
+    ass2 := arrayCreate(nEqns+nAddEqs, -1);
+    Matching.matchingExternalsetIncidenceMatrix(nVars+nAddVars, nEqns+nAddEqs, m);
+    BackendDAEEXT.matching(nVars+nAddVars, nEqns+nAddEqs, 5, 0, 0.0, 1);
+    BackendDAEEXT.getAssignment(ass2, ass1);
+    perfectMatching := listEmpty(Matching.getUnassigned(nVars+nAddVars, ass1, {}));
+    // (ass1, ass2, perfectMatching) := Matching.RegularMatching(m, nVars+nAddVars, nEqns+nAddEqs);
+    //BackendDump.dumpMatchingVars(ass1);
+    //BackendDump.dumpMatchingEqns(ass2);
 
-  // symbolic consistency check
-  (me, _, _, _) := BackendDAEUtil.getAdjacencyMatrixEnhancedScalar(syst, inShared, false);
-  (_, _, _) := consistencyCheck(redundantEqns, inEqns, inVars, inShared, nAddVars, m_, me, ass1, ass2, mapIncRowEqn);
+    // check whether or not a complete matching was found
+    if perfectMatching then
+      if index > 0 then
+        Error.addCompilerNotification("The given system is mixed-determined.   [index = " + intString(index) + "]");
+      end if;
 
-  // remove redundant equations
-  outRemovedEqns := BackendEquation.getEqns(redundantEqns, inEqns);
-//BackendDump.dumpEquationList(outRemovedEqns, "removed equations");
-  outEqns := BackendEquation.equationDelete(inEqns, redundantEqns);
-//BackendDump.dumpEquationArray(outEqns, "remaining equations");
+      if nAddVars > 0 then
+        // map artificial variables to redundant equations
+        range := List.intRange2(nVars+1, nVars+nAddVars);
+        redundantEqns := mapIndices(range, ass1);
+        //print("{" + stringDelimitList(List.map(redundantEqns, intString), ",") + "}\n");
 
-  // map artificial equations to unfixed states
-  range := if nAddEqs > 0 then List.intRange2(nEqns+1, nEqns+nAddEqs) else {};
-  range := mapIndices(range, ass2);
-//print("{" + stringDelimitList(List.map(range, intString), ",") + "}\n");
+        // symbolic consistency check
+        (me, _, _, _) := BackendDAEUtil.getAdjacencyMatrixEnhancedScalar(syst, inShared, false);
+        (_, _, _) := consistencyCheck(redundantEqns, inEqSystem.orderedEqs, inEqSystem.orderedVars, inShared, nAddVars, m_, me, ass1, ass2, mapIncRowEqn);
 
-  // introduce additional initial equations
-  initVarList := List.map1r(range, BackendVariable.getVarAt, inVars);
-  (outEqns, outDumpVars) := addStartValueEquations(initVarList, outEqns, {});
-//BackendDump.dumpEquationArray(outEqns, "remaining equations");
+        // remove redundant equations
+        removedEqns2 := BackendEquation.getEqns(redundantEqns, inEqSystem.orderedEqs);
+        //BackendDump.dumpEquationList(removedEqns2, "removed equations");
+        eqns2 := BackendEquation.equationDelete(inEqSystem.orderedEqs, redundantEqns);
+        //BackendDump.dumpEquationArray(eqns2, "remaining equations");
+        removedEqns := listAppend(removedEqns, removedEqns2);
+      else
+        eqns2 := inEqSystem.orderedEqs;
+      end if;
+
+      if nAddEqs > 0 then
+        // map artificial equations to unfixed states
+        range := List.intRange2(nEqns+1, nEqns+nAddEqs);
+        range := mapIndices(range, ass2);
+        //print("{" + stringDelimitList(List.map(range, intString), ",") + "}\n");
+
+        // introduce additional initial equations
+        initVarList := List.map1r(range, BackendVariable.getVarAt, inEqSystem.orderedVars);
+        (eqns2, dumpVars2) := addStartValueEquations(initVarList, eqns2, {});
+        //BackendDump.dumpEquationArray(eqns2, "remaining equations");
+        dumpVars := listAppend(dumpVars, dumpVars2);
+      end if;
+
+      outEqSystem := BackendDAEUtil.setEqSystEqs(inEqSystem, eqns2);
+      //print("index-" + intString(index) + " ende\n");
+      outTpl := ((initVars, dumpVars, removedEqns));
+      return;
+    end if;
+    //print("index-" + intString(index) + " ende\n");
+  end for;
+  Error.addCompilerError("The given system is mixed-determined.   [index > " + intString(maxMixedDeterminedIndex) + "]\nPlease checkout the option \"+maxMixedDeterminedIndex\".");
+  fail();
 end fixInitialSystem;
 
 protected function fixUnderDeterminedSystem "author: lochel"
