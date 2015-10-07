@@ -3788,10 +3788,10 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
 
     <%className%>::<%className%>(<%className%> &instance) : SystemDefaultImplementation(instance)
         , _algLoopSolverFactory(instance.getAlgLoopSolverFactory())
-        , _pointerToRealVars(instance.getSimVars()->getRealVarsVector())
-        , _pointerToIntVars(instance.getSimVars()->getIntVarsVector())
-        , _pointerToBoolVars(instance.getSimVars()->getBoolVarsVector())
-        , _pointerToStringVars(instance.getSimVars()->getStringVarsVector())
+        , _pointerToRealVars(_sim_vars->getRealVarsVector())
+        , _pointerToIntVars(_sim_vars->getIntVarsVector())
+        , _pointerToBoolVars(_sim_vars->getBoolVarsVector())
+        , _pointerToStringVars(_sim_vars->getStringVarsVector())
         <%additionalConstructorVarDefsBuffer%>
     {
         <%generateSimulationCppConstructorContent(simCode, context, extraFuncs, extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
