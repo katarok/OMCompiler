@@ -9,6 +9,10 @@
 //#include <Solver/KLU/klu.h>
 #endif
 
+#ifdef RUNTIME_PROFILING
+  #include <Core/Utils/extension/measure_time.hpp>
+#endif
+
 class Kinsol : public IAlgLoopSolver
 {
 public:
@@ -115,6 +119,9 @@ private:
    double* _Ax;
    int _nonzeros;
 */
-
+    #ifdef RUNTIME_PROFILING
+    std::vector<MeasureTimeData*> *measureTimeFunctionsArray;
+    MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
+    #endif
 };
 /** @} */ // end of solverKinsol

@@ -16,7 +16,7 @@ add_precompiled_header(${CppDASSLName}_static Include/Core/Modelica.h )
 install (TARGETS ${CppDASSLName}_static DESTINATION ${LIBINSTALLEXT})
 
 add_library(${CppDASSLName} SHARED ddaskr.cpp CppDASSL.cpp CppDASSLSettings.cpp FactoryExport.cpp  )
-target_link_libraries (${CppDASSLName} ${SolverName} ${ExtensionUtilitiesName} ${Boost_LIBRARIES})
+target_link_libraries (${CppDASSLName} ${SolverName} ${ExtensionUtilitiesName} ${Boost_LIBRARIES} ${UMFPACK_LIB})
 
 IF(OPENMP_FOUND)
 	set_target_properties(${CppDASSLName}_static PROPERTIES LINK_FLAGS ${OpenMP_CXX_FLAGS})

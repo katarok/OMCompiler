@@ -150,6 +150,18 @@ Kinsol::Kinsol(IAlgLoop* algLoop, INonLinSolverSettings* settings)
 {
 	_data = ((void*)this);
 	_sparse = _algLoop->getUseSparseFormat();
+
+    #ifdef RUNTIME_PROFILING
+    if(MeasureTime::getInstance() != NULL)
+    {
+        measureTimeFunctionsArray = new std::vector<MeasureTimeData*>(1, NULL); //0 getAnalyticJacobian
+        (*measureTimeFunctionsArray)[0] = new MeasureTimeData("getSystemMatrix");
+
+        MeasureTime::addResultContentBlock("test","kinsol",measureTimeFunctionsArray);
+        measuredFunctionStartValues = MeasureTime::getZeroValues();
+        measuredFunctionEndValues = MeasureTime::getZeroValues();
+    }
+    #endif
 }
 
 Kinsol::~Kinsol()
@@ -479,9 +491,22 @@ void Kinsol::solve()
 		//print_m (b, "b vector");
 		if(_sparse == false)
 		{
+            #ifdef RUNTIME_PROFILING
+            MEASURETIME_REGION_DEFINE(kinsolGetSystemMatrixHandle, "KinsolGetSystemMatrix");
+            if(MeasureTime::getInstance() != NULL)
+            {
+                MEASURETIME_START(measuredFunctionStartValues, kinsolGetSystemMatrixHandle, "KinsolGetSystemMatrix");
+            }
+            #endif
 
+            const matrix_t& A = _algLoop->getSystemMatrix(); //klu
 
-			const matrix_t& A = _algLoop->getSystemMatrix(); //klu
+            #ifdef RUNTIME_PROFILING
+            if(MeasureTime::getInstance() != NULL)
+            {
+                MEASURETIME_END(measuredFunctionStartValues, measuredFunctionEndValues, (*measureTimeFunctionsArray)[0], kinsolGetSystemMatrixHandle);
+            }
+            #endif
 
 			//matrix_t  A_copy(A);
 
