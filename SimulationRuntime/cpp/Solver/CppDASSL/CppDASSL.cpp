@@ -2,7 +2,7 @@
 #include <Core/Math/Functions.h>
 //#include <Core/Math/ILapack.h>
 #include <fstream>
-
+#include <iomanip>
 
 #if defined(USE_OPENMP)
 #include "omp.h"
@@ -299,6 +299,8 @@ int CppDASSL::calcFunction(const double* t, const double* y, const double* yprim
     ofstream file,file2;
     file.open("logout1",std::ofstream::out | std::ofstream::app);
     file2.open("logout2",std::ofstream::out | std::ofstream::app);
+    file << std::fixed << std::setprecision(12);
+    file2 << std::fixed << std::setprecision(12);
     if(numThread==0) {
         file<<"yc:"<<std::endl;
         for(int i=0;i<_dimSys;++i) file<<y[i]<<" ";
