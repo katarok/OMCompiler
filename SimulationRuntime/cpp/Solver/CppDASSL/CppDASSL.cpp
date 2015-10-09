@@ -296,42 +296,11 @@ int CppDASSL::res(const double* t, const double* y, const double* yprime, double
 
 int CppDASSL::calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires) {
     int numThread=omp_get_thread_num();
-    ofstream file,file2;
-    file.open("logout1",std::ofstream::out | std::ofstream::app);
-    file2.open("logout2",std::ofstream::out | std::ofstream::app);
-    file << std::fixed << std::setprecision(12);
-    file2 << std::fixed << std::setprecision(12);
-    if(numThread==0) {
-        file<<"yc:"<<std::endl;
-        for(int i=0;i<_dimSys;++i) file<<y[i]<<" ";
-        file<<std::endl;
-        file<<"ypc:"<<std::endl;
-        for(int i=0;i<_dimSys;++i) file<<yprime[i]<<" ";
-        file<<std::endl;
-    } else {
-        file2<<"yc:"<<std::endl;
-        for(int i=0;i<_dimSys;++i) file2<<y[i]<<" ";
-        file2<<std::endl;
-        file2<<"ypc:"<<std::endl;
-        for(int i=0;i<_dimSys;++i) file2<<yprime[i]<<" ";
-        file2<<std::endl;
-    }
     _time_system[numThread]->setTime(*t);
     _continuous_system[numThread]->setContinuousStates(y);
     _continuous_system[numThread]->evaluateODE(IContinuous::ALL);    // vxworksupdate
     _continuous_system[numThread]->getRHS(delta);
-    if(numThread==0) {
-        file<<"f(y):"<<std::endl;
-        for(int i=0;i<_dimSys;++i) file<<delta[i]<<" ";
-        file<<std::endl;
-    } else {
-        file2<<"f(y):"<<std::endl;
-        for(int i=0;i<_dimSys;++i) file2<<delta[i]<<" ";
-        file2<<std::endl;
-    }
     for(int i=0; i<_dimSys; ++i) delta[i]=yprime[i]-delta[i];
-    file.close();
-    file2.close();
     return 0;
 }
 
