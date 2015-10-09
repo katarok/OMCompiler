@@ -1,7 +1,5 @@
 #include <Solver/CppDASSL/dasslaux.h>
 #include <Solver/CppDASSL/dassl.h>
-#include <fstream>
-#include <iomanip>
 
 static int c__49 = 49;
 static int c__201 = 201;
@@ -6427,10 +6425,10 @@ if(sparse) {
     //        }
             double delinv = 1. / del;
 
-            for (l = 1; l <= i__2; ++l) {
+            for (int k = 1; k <= i__2; ++k) {
         /* L220: */
-                double val = (e[l-1] - delta[l]) * delinv;
-                if(std::abs(val)>1e-12) Asub[threadnum](l-1,i__)=val;
+                double val = (e[k-1] - delta[k]) * delinv;
+                if(std::abs(val)>1e-12) Asub[threadnum](k-1,i__)=val;
             }
 
     /* L210: */
@@ -6439,12 +6437,6 @@ if(sparse) {
         for(int j=0; j<num_threads; ++j) *A=*A+Asub[j];
     delete [] Asub;
 } else {
-    std::cout<<"Start Jacobian calculation!"<<std::endl;
-    std::ofstream file,file2;
-    file.open("logout1",std::ofstream::out | std::ofstream::app);
-    file2.open("logout2",std::ofstream::out | std::ofstream::app);
-    file << std::fixed << std::setprecision(12);
-    file2 << std::fixed << std::setprecision(12);
     #pragma omp parallel for num_threads(num_threads) schedule(static)
         for (int i__ = 0; i__ < i__1; ++i__) {
     /* Computing MAX */
@@ -6461,49 +6453,9 @@ if(sparse) {
             std::vector<double> e(*neq);
             int threadnum=omp_get_thread_num();
             double delinv = 1. / del;
-            if(threadnum==0) {
-                file<<"Calculating "<<i__<<" using "<<del<<", "<<*cj*del<<" and "<<delinv<<" at "<<*x<<std::endl;
-                file<<"y:"<<std::endl;
-                for(int i=0;i<*neq;++i) file<<ywork[i]<<" ";
-                file<<std::endl;
-                file<<"yp:"<<std::endl;
-                for(int i=0;i<*neq;++i) file<<ypwork[i]<<" ";
-                file<<std::endl;
-                file<<"delta: "<<delta<<std::endl;
-                for(int i=0;i<*neq;++i) file<<delta[i+1]<<" ";
-                file<<std::endl;
-            } else {
-                file2<<"Calculating "<<i__<<" using "<<del<<", "<<*cj*del<<" and "<<delinv<<" at "<<*x<<std::endl;
-                file2<<"y:"<<std::endl;
-                for(int i=0;i<*neq;++i) file2<<ywork[i]<<" ";
-                file2<<std::endl;
-                file2<<"yp:"<<std::endl;
-                for(int i=0;i<*neq;++i) file2<<ypwork[i]<<" ";
-                file2<<std::endl;
-                file2<<"delta: "<<delta<<std::endl;
-                for(int i=0;i<*neq;++i) file2<<delta[i+1]<<" ";
-                file2<<std::endl;
-            }
             ywork[i__] += del;
             ypwork[i__] += *cj * del;
-            std::cout<<threadnum<<std::endl;
             (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
-            if(threadnum==0) {
-
-                file<<"e:"<<std::endl;
-                for(int i=0;i<*neq;++i) file<<e[i]<<" ";
-                file<<std::endl;
-                file<<"delta: "<<delta<<std::endl;
-                for(int i=0;i<*neq;++i) file<<delta[i+1]<<" ";
-                file<<std::endl;
-            } else {
-                file2<<"e:"<<std::endl;
-                for(int i=0;i<*neq;++i) file2<<e[i]<<" ";
-                file2<<std::endl;
-                file2<<"delta: "<<delta<<std::endl;
-                for(int i=0;i<*neq;++i) file2<<delta[i+1]<<" ";
-                file2<<std::endl;
-            }
     //        if (*ires < 0) {
     //            return 0;
     //        }
@@ -6513,32 +6465,9 @@ if(sparse) {
         /* L220: */
                 wm[ i__*(*neq) + k] = (e[k-1] - delta[k]) * delinv;
             }
-            if(threadnum==0) {
-                file<<"wm:"<<std::endl;
-                for(int i=0;i<*neq;++i) file<<wm[i__*(*neq)+i+1]<<" ";
-                file<<std::endl;
-            } else {
-                file2<<"wm:"<<std::endl;
-                for(int i=0;i<*neq;++i) file2<<wm[i__*(*neq)+i+1]<<" ";
-                file2<<std::endl;
-            }
 
     /* L210: */
         }
-//        if(num_threads>1) {
-//            std::vector<double> e(*neq);
-//            for(int i=0; i<num_threads; ++i) {
-//                (*res)(x, &y[1], &yprime[1], cj, &e[0], ires, par);
-//            }
-//        }
-        file.close();
-        file2.close();
-        std::cout<<"End Jacobian calculation!"<<std::endl;
-        for(int i=0; i<*neq*(*neq); ++i) {
-            if(!(i%(*neq))) std::cout<<std::endl;
-            std::cout<<wm[i+1]<<" ";
-        }
-        std::cout<<std::endl;
 }
 iwm[12]+=(*neq);
 
