@@ -238,23 +238,11 @@ class MatFileWriter : public Writer<dim_1, dim_2, dim_3, dim_4>
     /*========================================================================================{end}==*/
     void init(std::string output_path, std::string file_name)
     {
-        const char Aclass[] = "A1 bt. ir1 na  Tj  re  ac  nt  so   r   y   ";  // special header string
-
         _file_name = file_name;
         _output_path = output_path;
 
         if (_output_stream.is_open())
             _output_stream.close();
-
-        // building complete file path
-        std::stringstream res_output_path;
-        res_output_path << output_path << file_name;
-
-        // open new file
-        _output_stream.open(res_output_path.str().c_str(), ios::binary | ios::trunc);
-
-        // write header matrix
-        writeMatVer4Matrix("Aclass", 4, 11, Aclass, sizeof(char));
 
         // initialize help variables
         _uiValueCount = 0;
@@ -358,6 +346,20 @@ class MatFileWriter : public Writer<dim_1, dim_2, dim_3, dim_4>
     /*========================================================================================{end}==*/
     void write(const std::vector<std::string>& s_list, const std::vector<std::string>& s_desc_list, const std::vector<std::string>& s_parameter_list, const std::vector<std::string>& s_desc_parameter_list)
     {
+        if (!_output_stream.is_open())
+        {
+          const char aclass[] = "A1 bt. ir1 na  Tj  re  ac  nt  so   r   y   ";  // special header string
+          // building complete file path
+          std::stringstream res_output_path;
+          res_output_path << _output_path << _file_name;
+
+          // open new file
+          _output_stream.open(res_output_path.str().c_str(), ios::binary | ios::trunc);
+
+          // write header matrix
+          writeMatVer4Matrix("Aclass", 4, 11, aclass, sizeof(char));
+        }
+
         unsigned int uilongest = 12;  // help variable for temp buffer size
         unsigned int uilongestName = 5;    // because of "Time"
         unsigned int uilongestDesc = 12;  // because of "Time in [s]"

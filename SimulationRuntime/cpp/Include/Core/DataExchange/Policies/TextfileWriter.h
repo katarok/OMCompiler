@@ -48,10 +48,6 @@ class TextFileWriter : public Writer<dim_1, dim_2, dim_3, dim_4>
         _output_path = output_path;
         if (_output_stream.is_open())
             _output_stream.close();
-        std::stringstream res_output_path;
-        res_output_path << output_path << file_name;
-        _output_stream.open(res_output_path.str().c_str(), ios::out);
-
     }
     void read(ublas::matrix<double>& R, ublas::matrix<double>& dR)
     {
@@ -97,6 +93,13 @@ class TextFileWriter : public Writer<dim_1, dim_2, dim_3, dim_4>
      */
     void write(const std::vector<std::string>& s_list, const std::vector<std::string>& s_desc_list, const std::vector<std::string>& s_parameter_list, const std::vector<std::string>& s_desc_parameter_list)
     {
+        if (!_output_stream.is_open())
+        {
+          std::stringstream res_output_path;
+          res_output_path << _output_path << _file_name;
+          _output_stream.open(res_output_path.str().c_str(), ios::out);
+        }
+
         std::string s;
         _output_stream << "\"time\"" << SEPERATOR;
 
