@@ -6437,6 +6437,7 @@ if(sparse) {
         for(int j=0; j<num_threads; ++j) *A=*A+Asub[j];
     delete [] Asub;
 } else {
+    if(loglevel>4) std::cout<<"Calculating Jacobian"<<std::endl;
     #pragma omp parallel for num_threads(num_threads) schedule(static)
         for (int i__ = 0; i__ < i__1; ++i__) {
     /* Computing MAX */

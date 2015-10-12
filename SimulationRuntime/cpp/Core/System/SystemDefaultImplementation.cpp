@@ -89,6 +89,8 @@ SystemDefaultImplementation::SystemDefaultImplementation(SystemDefaultImplementa
   , _terminal        (false)
   , _terminate      (false)
   , _global_settings    (instance.getGlobalSettings())
+  ,_conditions0(NULL)
+  ,_event_system(NULL)
 {
   __z = _sim_vars->getStateVector();
   __zDot = _sim_vars->getDerStateVector();
