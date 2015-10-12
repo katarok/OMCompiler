@@ -91,7 +91,8 @@ private:
   int
     _dimSys,               ///< Input       - (total) Dimension of system (=number of ODE)
     _dimZeroFunc,
-    *_jroot;
+    *_jroot,
+    _numThreads;
   void
     *_data;
 
@@ -122,7 +123,7 @@ private:
 //   IMixedSystem* _mixed_system;
    ITime** _time_system;
    IEvent* _event_system;
-   IMixedSystem* _mixed_system;
+   IMixedSystem** _mixed_system;
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
 

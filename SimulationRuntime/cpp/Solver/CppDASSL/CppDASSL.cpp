@@ -15,7 +15,9 @@ CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
       _cppdasslsettings(dynamic_cast<ISolverSettings*>(_settings)),
       _continuous_system(),
-      _time_system()
+      _time_system(),
+      _event_system(NULL),
+      _mixed_system()
 /*      _cvodeMem(NULL),
       _z(NULL),
       _zInit(NULL),
@@ -50,9 +52,13 @@ CppDASSL::~CppDASSL()
     delete [] _y;
   if (_yp)
     delete [] _yp;
-  if(_continuous_system) {
+  if(_continuous_system)
     delete [] _continuous_system;
-  }
+  if(_time_system)
+    delete [] _time_system;
+  if(_mixed_system)
+    delete [] _mixed_system;
+
 }
 
 void CppDASSL::initialize()
@@ -60,19 +66,21 @@ void CppDASSL::initialize()
     SolverDefaultImplementation::initialize();
     IContinuous *continuous_system = dynamic_cast<IContinuous*>(_system);
     ITime *time_system =  dynamic_cast<ITime*>(_system);
-    int numThreads=_cppdasslsettings->getGlobalSettings()->getSolverThreads();
-    dasslSolver.setNumThreads(numThreads);
-    _continuous_system = new IContinuous*[numThreads];
-    _time_system = new ITime*[numThreads];
+    _numThreads=_cppdasslsettings->getGlobalSettings()->getSolverThreads();
+    dasslSolver.setNumThreads(_numThreads);
+    _continuous_system = new IContinuous*[_numThreads];
+    _time_system = new ITime*[_numThreads];
+    _mixed_system = new IMixedSystem*[_numThreads];
     _continuous_system[0] = continuous_system;
     _time_system[0] = time_system;
     _event_system = dynamic_cast<IEvent*>(_system);
-    _mixed_system = dynamic_cast<IMixedSystem*>(_system);
-    for(int i = 1; i < numThreads; i++)
+    _mixed_system[0] = dynamic_cast<IMixedSystem*>(_system);
+    for(int i = 1; i < _numThreads; i++)
     {
         IMixedSystem* clonedSystem = _system->clone();
         _continuous_system[i] = dynamic_cast<IContinuous*>(clonedSystem);
         _time_system[i] = dynamic_cast<ITime*>(clonedSystem);
+        _mixed_system[i] = dynamic_cast<IMixedSystem*>(clonedSystem);
         dynamic_cast<ISystemInitialization*>(clonedSystem)->initialize();
     }
 
@@ -114,8 +122,9 @@ void CppDASSL::initialize()
     }
     if(_countnz<_dimSys*_dimSys/100) {
         dasslSolver.setSparse(true);
+        std::cout<<"Using sparse solver!"<<std::endl;
     }
-    dasslSolver.setDenseOutput(true);
+    dasslSolver.setDenseOutput(false);
     delete [] _yphelp;
 }
 
@@ -144,7 +153,7 @@ void CppDASSL::solve(const SOLVERCALL action)
     bool state_selection = stateSelection();
     if(!_dimZeroFunc) {
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,NULL,_dimZeroFunc,NULL,false);
-        _continuous_system[0]->stepCompleted(t);
+        for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
         if (state_selection) {
             _continuous_system[0]->getContinuousStates(_y);
             _continuous_system[0]->setContinuousStates(_y);
@@ -169,7 +178,7 @@ void CppDASSL::solve(const SOLVERCALL action)
         if(_jroot) delete [] _jroot;
         _jroot=new int[_dimZeroFunc];
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,false);
-        _continuous_system[0]->stepCompleted(t);
+        for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
         if (state_selection) {
             _continuous_system[0]->getContinuousStates(_y);
             _continuous_system[0]->setContinuousStates(_y);
@@ -182,8 +191,11 @@ void CppDASSL::solve(const SOLVERCALL action)
             _continuous_system[0]->evaluateAll(IContinuous::ALL);
             SolverDefaultImplementation::writeToFile(0, t, _h);
             for (int i = 0; i < _dimZeroFunc; i++) _events[i] = bool(_jroot[i]);
-
-            if (_mixed_system->handleSystemEvents(_events))
+            for(int i=1; i<_numThreads; ++i) {
+                _continuous_system[i]->setContinuousStates(_y);
+                _mixed_system[i]->handleSystemEvents(_events);
+            }
+            if (_mixed_system[0]->handleSystemEvents(_events))
               {
                 _continuous_system[0]->getContinuousStates(_y);
                 _continuous_system[0]->setContinuousStates(_y);
@@ -202,7 +214,7 @@ void CppDASSL::solve(const SOLVERCALL action)
             } else {
                 idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,true);
             }
-            if(_continuous_system[0]->stepCompleted(t)) break;
+            for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
             if (state_selection) {
                 _continuous_system[0]->getContinuousStates(_y);
                 _continuous_system[0]->setContinuousStates(_y);
@@ -216,8 +228,11 @@ void CppDASSL::solve(const SOLVERCALL action)
                 _continuous_system[0]->evaluateAll(IContinuous::ALL);
                 SolverDefaultImplementation::writeToFile(0, t, _h);
                 for (int i = 0; i < _dimZeroFunc; i++) _events[i] = bool(_jroot[i]);
-
-                if (_mixed_system->handleSystemEvents(_events))
+                for(int i=1; i<_numThreads; ++i) {
+                    _continuous_system[i]->setContinuousStates(_y);
+                    _mixed_system[i]->handleSystemEvents(_events);
+                }
+                if (_mixed_system[0]->handleSystemEvents(_events))
                   {
                     _continuous_system[0]->getContinuousStates(_y);
                     _continuous_system[0]->setContinuousStates(_y);
