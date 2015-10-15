@@ -124,6 +124,7 @@ private:
    ITime** _time_system;
    IEvent* _event_system;
    IMixedSystem** _mixed_system;
+   SystemStateSelection** _system_state_selection;
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
 

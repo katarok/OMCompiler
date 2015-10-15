@@ -88,6 +88,15 @@ return true;
     memcpy(oldRowPivot.get(), _rowPivot[i].get(), _dimDummyStates[i]*sizeof(int));
 
    const double* jac =    stateset_matrix.data().begin();
+    std::cout<<"Stateset matrix "<<i<<std::endl;
+    for(int k=0; k<_dimDummyStates[i]*_dimStateCanditates[i]; ++k) {
+        std::cout<<jac[k]<<" ";
+    }
+    std::cout<<std::endl;
+    int* piv=_colPivot[i].get();
+    std::cout<<"Pivot alt"<<std::endl;
+    for(int k=0; k<_dimStateCanditates[i] ;++k) std::cout<<piv[k]<<" ";
+    std::cout<<std::endl;
    double* jac_ = new double[_dimDummyStates[i]*_dimStateCanditates[i]];
    memcpy(jac_, jac, _dimDummyStates[i]*_dimStateCanditates[i]*sizeof(double));
 
@@ -97,7 +106,9 @@ return true;
     {
       throw ModelicaSimulationError(MATH_FUNCTION,"Error, singular Jacobian for dynamic state selection at time");
     }
-
+    std::cout<<"Pivot neu"<<std::endl;
+    for(int k=0; k< _dimStateCanditates[i];++k) std::cout<<piv[k]<<" ";
+    std::cout<<std::endl;
     /* if we have a new set throw event for reinitialization
     and set the A matrix for set.x=A*(states) */
     res = comparePivot(oldColPivot.get(), _colPivot[i].get(), switchStates,i);

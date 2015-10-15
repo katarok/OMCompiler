@@ -14,10 +14,12 @@
 CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
       _cppdasslsettings(dynamic_cast<ISolverSettings*>(_settings)),
-      _continuous_system(),
-      _time_system(),
+      _continuous_system(NULL),
+      _time_system(NULL),
       _event_system(NULL),
-      _mixed_system()
+      _mixed_system(NULL),
+      _system_state_selection(NULL),
+      _jroot(NULL)
 /*      _cvodeMem(NULL),
       _z(NULL),
       _zInit(NULL),
@@ -58,6 +60,8 @@ CppDASSL::~CppDASSL()
     delete [] _time_system;
   if(_mixed_system)
     delete [] _mixed_system;
+  if(_system_state_selection)
+    delete [] _system_state_selection;
 
 }
 
@@ -75,13 +79,28 @@ void CppDASSL::initialize()
     _time_system[0] = time_system;
     _event_system = dynamic_cast<IEvent*>(_system);
     _mixed_system[0] = dynamic_cast<IMixedSystem*>(_system);
+    _dimSys = _continuous_system[0]->getDimContinuousStates();
+
+
+
+    if(_numThreads>1) {
+        _system_state_selection=new SystemStateSelection*[_numThreads-1];
+    }
     for(int i = 1; i < _numThreads; i++)
     {
         IMixedSystem* clonedSystem = _system->clone();
         _continuous_system[i] = dynamic_cast<IContinuous*>(clonedSystem);
         _time_system[i] = dynamic_cast<ITime*>(clonedSystem);
         _mixed_system[i] = dynamic_cast<IMixedSystem*>(clonedSystem);
+
+        //_system_state_selection[i-1]->initialize();
+        std::cout<<"Initializing system "<<i<<std::endl;
+        dynamic_cast<ISystemInitialization*>(clonedSystem)->setInitial(true);
         dynamic_cast<ISystemInitialization*>(clonedSystem)->initialize();
+        _system_state_selection[i-1]=dynamic_cast<SystemStateSelection*>(new SystemStateSelection(clonedSystem));
+        _system_state_selection[i-1]->stateSelection(1);
+        dynamic_cast<ISystemInitialization*>(clonedSystem)->setInitial(false);
+        _system_state_selection[i-1]->stateSelection(1);
     }
 
 
@@ -90,11 +109,16 @@ void CppDASSL::initialize()
     _y = new double[_dimSys];
     _yp = new double[_dimSys];
 
-
-    _continuous_system[0]->evaluateAll(IContinuous::ALL);
-    _continuous_system[0]->getContinuousStates(_y);
+    for(int i=0; i<_numThreads; ++i) {
+        _continuous_system[i]->evaluateAll(IContinuous::ALL);
+        _continuous_system[i]->getContinuousStates(_y);
+        _continuous_system[i]->setContinuousStates(_y);
+        for(int k=0; k<_dimSys; ++k) {
+            std::cout<<_y[k]<<" ";
+        }
+        std::cout<<std::endl;
+    }
 // begin analyzation mode
-    _continuous_system[0]->setContinuousStates(_y);
     _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
     _continuous_system[0]->getRHS(_yp);
 
@@ -124,7 +148,7 @@ void CppDASSL::initialize()
         dasslSolver.setSparse(true);
         std::cout<<"Using sparse solver!"<<std::endl;
     }
-    dasslSolver.setDenseOutput(false);
+    dasslSolver.setDenseOutput(true);
     delete [] _yphelp;
 }
 
@@ -182,8 +206,17 @@ void CppDASSL::solve(const SOLVERCALL action)
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,false);
         for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
         state_selection = stateSelection();
+        std::cout<<"System 0 StateSelectionStatus at "<<t<<" "<<state_selection<<std::endl;
+        for(int i=1; i<_numThreads; ++i ) {
+            _continuous_system[i]->setContinuousStates(_y);
+            std::cout<<"System "<<i<<" StateSelectionStatus at "<<t<<" "<<_system_state_selection[i-1]->stateSelection(1)<<std::endl;
+        }
         if (state_selection) {
             std::cout<<"StateSelection at "<< t <<std::endl;
+//            for(int i=1; i<_numThreads; ++i) {
+//                    _continuous_system[i]->setContinuousStates(_y);
+//                    _system_state_selection[i-1]->stateSelection(1);
+//                }
             _continuous_system[0]->getContinuousStates(_y);
             _continuous_system[0]->setContinuousStates(_y);
             _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
@@ -220,8 +253,18 @@ void CppDASSL::solve(const SOLVERCALL action)
             }
             for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
             state_selection = stateSelection();
+            std::cout<<"System 0 StateSelectionStatus at "<<t<<" "<<state_selection<<std::endl;
+            for(int i=1; i<_numThreads; ++i ) {
+                _continuous_system[i]->setContinuousStates(_y);
+                std::cout<<"System "<<i<<" StateSelectionStatus at "<<t<<" "<<_system_state_selection[i-1]->stateSelection(1)<<std::endl;
+            }
             if (state_selection) {
+                std::cout<<"StateSelection at "<< t <<std::endl;
                 _continuous_system[0]->getContinuousStates(_y);
+//                for(int i=1; i<_numThreads; ++i) {
+//                    _continuous_system[i]->setContinuousStates(_y);
+//                    _system_state_selection[i-1]->stateSelection(1);
+//                }
                 _continuous_system[0]->setContinuousStates(_y);
                 _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
                 _continuous_system[0]->getRHS(_yp);
