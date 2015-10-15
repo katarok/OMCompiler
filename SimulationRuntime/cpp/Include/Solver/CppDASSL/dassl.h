@@ -23,13 +23,13 @@ typedef int (*Jd_fp)(double *, double *, double *, double *, double *, void *);
 
 class dassl {
     public:
-        dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0) {
+        dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL) {
             info.resize(20,0);
         }
-        dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0) {
+        dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL) {
             info.resize(20,0);
         }
-        dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6), loglevel(0) {
+        dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL) {
             info.resize(20,0);
         }
         ~dassl() {
