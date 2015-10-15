@@ -150,10 +150,11 @@ void CppDASSL::solve(const SOLVERCALL action)
     _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
     _continuous_system[0]->getRHS(_yp);
     SolverDefaultImplementation::writeToFile(0, t, _h);
-    bool state_selection = stateSelection();
+    bool state_selection;
     if(!_dimZeroFunc) {
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,NULL,_dimZeroFunc,NULL,false);
         for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
+        state_selection = stateSelection();
         if (state_selection) {
             _continuous_system[0]->getContinuousStates(_y);
             _continuous_system[0]->setContinuousStates(_y);
@@ -167,6 +168,7 @@ void CppDASSL::solve(const SOLVERCALL action)
             SolverDefaultImplementation::writeToFile(0, t, _h);
             idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,NULL,_dimZeroFunc,NULL,true);
             _continuous_system[0]->stepCompleted(t);
+            state_selection = stateSelection();
             if (state_selection) {
                 _continuous_system[0]->getContinuousStates(_y);
                 _continuous_system[0]->setContinuousStates(_y);
@@ -179,7 +181,9 @@ void CppDASSL::solve(const SOLVERCALL action)
         _jroot=new int[_dimZeroFunc];
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,false);
         for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
+        state_selection = stateSelection();
         if (state_selection) {
+            std::cout<<"StateSelection at "<< t <<std::endl;
             _continuous_system[0]->getContinuousStates(_y);
             _continuous_system[0]->setContinuousStates(_y);
             _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
@@ -209,12 +213,13 @@ void CppDASSL::solve(const SOLVERCALL action)
             _continuous_system[0]->setContinuousStates(_y);
             _continuous_system[0]->evaluateAll(IContinuous::ALL);
             SolverDefaultImplementation::writeToFile(0, t, _h);
-            if(idid==5) {
+            if(idid==5 || state_selection) {
                 idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,false);
             } else {
                 idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,true);
             }
             for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
+            state_selection = stateSelection();
             if (state_selection) {
                 _continuous_system[0]->getContinuousStates(_y);
                 _continuous_system[0]->setContinuousStates(_y);
