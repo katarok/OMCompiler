@@ -14,12 +14,13 @@
 CppDASSL::CppDASSL(IMixedSystem* system, ISolverSettings* settings)
     : SolverDefaultImplementation(system, settings),
       _cppdasslsettings(dynamic_cast<ISolverSettings*>(_settings)),
-      _continuous_system(NULL),
-      _time_system(NULL),
-      _event_system(NULL),
-      _mixed_system(NULL),
-      _system_state_selection(NULL),
-      _jroot(NULL)
+      _continuous_systems(),
+      _time_systems(),
+      _event_system(),
+      _mixed_systems(),
+      _state_selections(),
+      _jroot(NULL),
+      _matrix()
 /*      _cvodeMem(NULL),
       _z(NULL),
       _zInit(NULL),
@@ -54,15 +55,8 @@ CppDASSL::~CppDASSL()
     delete [] _y;
   if (_yp)
     delete [] _yp;
-  if(_continuous_system)
-    delete [] _continuous_system;
-  if(_time_system)
-    delete [] _time_system;
-  if(_mixed_system)
-    delete [] _mixed_system;
-  if(_system_state_selection)
-    delete [] _system_state_selection;
-
+  for(size_t i = 1; i < _continuous_systems.size(); i++)
+    delete _continuous_systems[i];
 }
 
 void CppDASSL::initialize()
@@ -72,67 +66,60 @@ void CppDASSL::initialize()
     ITime *time_system =  dynamic_cast<ITime*>(_system);
     _numThreads=_cppdasslsettings->getGlobalSettings()->getSolverThreads();
     dasslSolver.setNumThreads(_numThreads);
-    _continuous_system = new IContinuous*[_numThreads];
-    _time_system = new ITime*[_numThreads];
-    _mixed_system = new IMixedSystem*[_numThreads];
-    _continuous_system[0] = continuous_system;
-    _time_system[0] = time_system;
+    _continuous_systems = vector<IContinuous*>(_numThreads, NULL);
+    _time_systems = vector<ITime*>(_numThreads, NULL);
+    _mixed_systems = vector<IMixedSystem*>(_numThreads, NULL);
+    _state_selections=vector<IStateSelection*>(_numThreads, NULL);
+    _continuous_systems[0] = continuous_system;
+    _time_systems[0] = time_system;
     _event_system = dynamic_cast<IEvent*>(_system);
-    _mixed_system[0] = dynamic_cast<IMixedSystem*>(_system);
-    _dimSys = _continuous_system[0]->getDimContinuousStates();
+    _mixed_systems[0] = dynamic_cast<IMixedSystem*>(_system);
+    _state_selections[0] = dynamic_cast<IStateSelection*>(_system);
+    _dimSys = _continuous_systems[0]->getDimContinuousStates();
 
-
-
-    if(_numThreads>1) {
-        _system_state_selection=new SystemStateSelection*[_numThreads-1];
-    }
     for(int i = 1; i < _numThreads; i++)
     {
         IMixedSystem* clonedSystem = _system->clone();
-        _continuous_system[i] = dynamic_cast<IContinuous*>(clonedSystem);
-        _time_system[i] = dynamic_cast<ITime*>(clonedSystem);
-        _mixed_system[i] = dynamic_cast<IMixedSystem*>(clonedSystem);
-
-        //_system_state_selection[i-1]->initialize();
-        std::cout<<"Initializing system "<<i<<std::endl;
-        dynamic_cast<ISystemInitialization*>(clonedSystem)->setInitial(true);
-        dynamic_cast<ISystemInitialization*>(clonedSystem)->initialize();
-        _system_state_selection[i-1]=dynamic_cast<SystemStateSelection*>(new SystemStateSelection(clonedSystem));
-        _system_state_selection[i-1]->stateSelection(1);
-        dynamic_cast<ISystemInitialization*>(clonedSystem)->setInitial(false);
-        _system_state_selection[i-1]->stateSelection(1);
+        _continuous_systems[i] = dynamic_cast<IContinuous*>(clonedSystem);
+        _time_systems[i] = dynamic_cast<ITime*>(clonedSystem);
+        _mixed_systems[i] = dynamic_cast<IMixedSystem*>(clonedSystem);
+        _state_selections[i] = dynamic_cast<IStateSelection*>(clonedSystem);
+        ISystemInitialization *initSystem = dynamic_cast<ISystemInitialization*>(clonedSystem);
+        initSystem->setInitial(true);
+        initSystem->initialize();
+        initSystem->setInitial(false);
     }
 
 
-    _dimSys = _continuous_system[0]->getDimContinuousStates();
+    _dimSys = _continuous_systems[0]->getDimContinuousStates();
     _dimZeroFunc = _event_system->getDimZeroFunc();
     _y = new double[_dimSys];
     _yp = new double[_dimSys];
 
     for(int i=0; i<_numThreads; ++i) {
-        _continuous_system[i]->evaluateAll(IContinuous::ALL);
-        _continuous_system[i]->getContinuousStates(_y);
-        _continuous_system[i]->setContinuousStates(_y);
+        _continuous_systems[i]->evaluateAll(IContinuous::ALL);
+        _continuous_systems[i]->getContinuousStates(_y);
+        _continuous_systems[i]->setContinuousStates(_y);
         for(int k=0; k<_dimSys; ++k) {
             std::cout<<_y[k]<<" ";
         }
         std::cout<<std::endl;
     }
 // begin analyzation mode
-    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-    _continuous_system[0]->getRHS(_yp);
+    _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_systems[0]->getRHS(_yp);
 
     int _countnz=0;
     double delta=1e-6;
     double* _yphelp=new double[_dimSys];
-    _time_system[0]->setTime(_tCurrent);
+    _time_systems[0]->setTime(_tCurrent);
     for(int i=0; i<_dimSys; ++i) {
         double _ysave;
         _ysave=_y[i];
         _y[i]+=delta;
-        _continuous_system[0]->setContinuousStates(_y);
-        _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-        _continuous_system[0]->getRHS(_yphelp);
+        _continuous_systems[0]->setContinuousStates(_y);
+        _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+        _continuous_systems[0]->getRHS(_yphelp);
         for(int j=0; j<_dimSys; ++j) {
             if(_yphelp[j]-_yp[j]>1e-12) {
                 _countnz++;
@@ -165,127 +152,135 @@ void CppDASSL::solve(const SOLVERCALL action)
     if (action & RECALL)
     {
         writeToFile(0, _tCurrent, _h);
-        _continuous_system[0]->getContinuousStates(_y);
+        _continuous_systems[0]->getContinuousStates(_y);
     }
   // Initialization phase
     t=_tCurrent;
-    _time_system[0]->setTime(t);
-    _continuous_system[0]->setContinuousStates(_y);
-    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-    _continuous_system[0]->getRHS(_yp);
+    _time_systems[0]->setTime(t);
+    _continuous_systems[0]->setContinuousStates(_y);
+    _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_systems[0]->getRHS(_yp);
     SolverDefaultImplementation::writeToFile(0, t, _h);
     bool state_selection;
     if(!_dimZeroFunc) {
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,NULL,_dimZeroFunc,NULL,false);
-        for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
+        for(int i=0; i<_numThreads; ++i) _continuous_systems[i]->stepCompleted(t);
         state_selection = stateSelection();
         if (state_selection) {
-            _continuous_system[0]->getContinuousStates(_y);
-            _continuous_system[0]->setContinuousStates(_y);
-            _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-            _continuous_system[0]->getRHS(_yp);
+            _continuous_systems[0]->getContinuousStates(_y);
+            _continuous_systems[0]->setContinuousStates(_y);
+            _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+            _continuous_systems[0]->getRHS(_yp);
         }
         while(idid==-1 || idid==1) {
-            _time_system[0]->setTime(t);
-            _continuous_system[0]->setContinuousStates(_y);
-            _continuous_system[0]->evaluateAll(IContinuous::ALL);
+            _time_systems[0]->setTime(t);
+            _continuous_systems[0]->setContinuousStates(_y);
+            _continuous_systems[0]->evaluateAll(IContinuous::ALL);
             SolverDefaultImplementation::writeToFile(0, t, _h);
             idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,NULL,_dimZeroFunc,NULL,true);
-            _continuous_system[0]->stepCompleted(t);
+            _continuous_systems[0]->stepCompleted(t);
             state_selection = stateSelection();
             if (state_selection) {
-                _continuous_system[0]->getContinuousStates(_y);
-                _continuous_system[0]->setContinuousStates(_y);
-                _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-                _continuous_system[0]->getRHS(_yp);
+                _continuous_systems[0]->getContinuousStates(_y);
+                _continuous_systems[0]->setContinuousStates(_y);
+                _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+                _continuous_systems[0]->getRHS(_yp);
             }
         }
     } else {
         if(_jroot) delete [] _jroot;
         _jroot=new int[_dimZeroFunc];
         int idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,false);
-        for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
+        for(int i=0; i<_numThreads; ++i) _continuous_systems[i]->stepCompleted(t);
         state_selection = stateSelection();
         std::cout<<"System 0 StateSelectionStatus at "<<t<<" "<<state_selection<<std::endl;
-        for(int i=1; i<_numThreads; ++i ) {
-            _continuous_system[i]->setContinuousStates(_y);
-            std::cout<<"System "<<i<<" StateSelectionStatus at "<<t<<" "<<_system_state_selection[i-1]->stateSelection(1)<<std::endl;
-        }
         if (state_selection) {
+            for(size_t i = 0; i < _state_selections[0]->getDimStateSets(); i++)
+            {
+              _state_selections[0]->getAMatrix(i,_matrix);
+              for(int j=1; j<_numThreads; ++j) {
+                _state_selections[j]->setAMatrix(i,_matrix);
+              }
+            }
             std::cout<<"StateSelection at "<< t <<std::endl;
 //            for(int i=1; i<_numThreads; ++i) {
 //                    _continuous_system[i]->setContinuousStates(_y);
 //                    _system_state_selection[i-1]->stateSelection(1);
 //                }
-            _continuous_system[0]->getContinuousStates(_y);
-            _continuous_system[0]->setContinuousStates(_y);
-            _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-            _continuous_system[0]->getRHS(_yp);
+            _continuous_systems[0]->getContinuousStates(_y);
+            for(int i=1; i<_numThreads; ++i) {
+                _continuous_systems[i]->setContinuousStates(_y);
+            }
+            _continuous_systems[0]->setContinuousStates(_y);
+            _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+            _continuous_systems[0]->getRHS(_yp);
         }
         if(idid==5) {
-            _time_system[0]->setTime(t);
-            _continuous_system[0]->setContinuousStates(_y);
-            _continuous_system[0]->evaluateAll(IContinuous::ALL);
+            _time_systems[0]->setTime(t);
+            _continuous_systems[0]->setContinuousStates(_y);
+            _continuous_systems[0]->evaluateAll(IContinuous::ALL);
             SolverDefaultImplementation::writeToFile(0, t, _h);
             for (int i = 0; i < _dimZeroFunc; i++) _events[i] = bool(_jroot[i]);
             for(int i=1; i<_numThreads; ++i) {
-                _continuous_system[i]->setContinuousStates(_y);
-                _mixed_system[i]->handleSystemEvents(_events);
+                _continuous_systems[i]->setContinuousStates(_y);
+                _mixed_systems[i]->handleSystemEvents(_events);
             }
-            if (_mixed_system[0]->handleSystemEvents(_events))
+            if (_mixed_systems[0]->handleSystemEvents(_events))
               {
-                _continuous_system[0]->getContinuousStates(_y);
-                _continuous_system[0]->setContinuousStates(_y);
-                _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-                _continuous_system[0]->getRHS(_yp);
+                _continuous_systems[0]->getContinuousStates(_y);
+                _continuous_systems[0]->setContinuousStates(_y);
+                _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+                _continuous_systems[0]->getRHS(_yp);
               }
 
         }
         while(idid==-1 || idid==5 || idid==1) {
-            _time_system[0]->setTime(t);
-            _continuous_system[0]->setContinuousStates(_y);
-            _continuous_system[0]->evaluateAll(IContinuous::ALL);
+            _time_systems[0]->setTime(t);
+            _continuous_systems[0]->setContinuousStates(_y);
+            _continuous_systems[0]->evaluateAll(IContinuous::ALL);
             SolverDefaultImplementation::writeToFile(0, t, _h);
             if(idid==5 || state_selection) {
                 idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,false);
             } else {
                 idid=dasslSolver.solve(&res,_dimSys,t,&_y[0],&_yp[0],_tEnd,_data,NULL,NULL,&zeroes,_dimZeroFunc,_jroot,true);
             }
-            for(int i=0; i<_numThreads; ++i) _continuous_system[i]->stepCompleted(t);
+            for(int i=0; i<_numThreads; ++i) _continuous_systems[i]->stepCompleted(t);
             state_selection = stateSelection();
             std::cout<<"System 0 StateSelectionStatus at "<<t<<" "<<state_selection<<std::endl;
-            for(int i=1; i<_numThreads; ++i ) {
-                _continuous_system[i]->setContinuousStates(_y);
-                std::cout<<"System "<<i<<" StateSelectionStatus at "<<t<<" "<<_system_state_selection[i-1]->stateSelection(1)<<std::endl;
-            }
             if (state_selection) {
                 std::cout<<"StateSelection at "<< t <<std::endl;
-                _continuous_system[0]->getContinuousStates(_y);
-//                for(int i=1; i<_numThreads; ++i) {
-//                    _continuous_system[i]->setContinuousStates(_y);
-//                    _system_state_selection[i-1]->stateSelection(1);
-//                }
-                _continuous_system[0]->setContinuousStates(_y);
-                _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-                _continuous_system[0]->getRHS(_yp);
+                for(size_t i = 0; i < _state_selections[0]->getDimStateSets(); i++)
+                {
+                  _state_selections[0]->getAMatrix(i,_matrix);
+                  for(int j=1; j<_numThreads; ++j) {
+                    _state_selections[j]->setAMatrix(i,_matrix);
+                  }
+                }
+                _continuous_systems[0]->getContinuousStates(_y);
+                for(int i=1; i<_numThreads; ++i) {
+                    _continuous_systems[i]->setContinuousStates(_y);
+                }
+                _continuous_systems[0]->setContinuousStates(_y);
+                _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+                _continuous_systems[0]->getRHS(_yp);
             }
 ;
             if(idid==5) {
-                _time_system[0]->setTime(t);
-                _continuous_system[0]->setContinuousStates(_y);
-                _continuous_system[0]->evaluateAll(IContinuous::ALL);
+                _time_systems[0]->setTime(t);
+                _continuous_systems[0]->setContinuousStates(_y);
+                _continuous_systems[0]->evaluateAll(IContinuous::ALL);
                 SolverDefaultImplementation::writeToFile(0, t, _h);
                 for (int i = 0; i < _dimZeroFunc; i++) _events[i] = bool(_jroot[i]);
                 for(int i=1; i<_numThreads; ++i) {
-                    _continuous_system[i]->setContinuousStates(_y);
-                    _mixed_system[i]->handleSystemEvents(_events);
+                    _continuous_systems[i]->setContinuousStates(_y);
+                    _mixed_systems[i]->handleSystemEvents(_events);
                 }
-                if (_mixed_system[0]->handleSystemEvents(_events))
+                if (_mixed_systems[0]->handleSystemEvents(_events))
                   {
-                    _continuous_system[0]->getContinuousStates(_y);
-                    _continuous_system[0]->setContinuousStates(_y);
-                    _continuous_system[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-                    _continuous_system[0]->getRHS(_yp);
+                    _continuous_systems[0]->getContinuousStates(_y);
+                    _continuous_systems[0]->setContinuousStates(_y);
+                    _continuous_systems[0]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+                    _continuous_systems[0]->getRHS(_yp);
                   }
 
             }
@@ -293,9 +288,9 @@ void CppDASSL::solve(const SOLVERCALL action)
 
     }
     _tCurrent=_tEnd;
-    _time_system[0]->setTime(_tCurrent);
-    _continuous_system[0]->setContinuousStates(_y);
-    _continuous_system[0]->evaluateAll(IContinuous::ALL);
+    _time_systems[0]->setTime(_tCurrent);
+    _continuous_systems[0]->setContinuousStates(_y);
+    _continuous_systems[0]->evaluateAll(IContinuous::ALL);
     SolverDefaultImplementation::writeToFile(0, t, _h);
     _solverStatus = ISolver::DONE;
 }
@@ -359,10 +354,10 @@ int CppDASSL::res(const double* t, const double* y, const double* yprime, double
 
 int CppDASSL::calcFunction(const double* t, const double* y, const double* yprime, double* cj, double* delta, int* ires) {
     int numThread=omp_get_thread_num();
-    _time_system[numThread]->setTime(*t);
-    _continuous_system[numThread]->setContinuousStates(y);
-    _continuous_system[numThread]->evaluateODE(IContinuous::ALL);    // vxworksupdate
-    _continuous_system[numThread]->getRHS(delta);
+    _time_systems[numThread]->setTime(*t);
+    _continuous_systems[numThread]->setContinuousStates(y);
+    _continuous_systems[numThread]->evaluateODE(IContinuous::ALL);    // vxworksupdate
+    _continuous_systems[numThread]->getRHS(delta);
     for(int i=0; i<_dimSys; ++i) delta[i]=yprime[i]-delta[i];
     return 0;
 }
@@ -377,11 +372,11 @@ int CppDASSL::zeroes(const int* NEQ, const double* T, const double* Y, const dou
 
 void CppDASSL::giveZeroVal(const double &t, const double *y, double *zeroValue)
 {
-  _time_system[0]->setTime(t);
-  _continuous_system[0]->setContinuousStates(y);
+  _time_systems[0]->setTime(t);
+  _continuous_systems[0]->setContinuousStates(y);
 
   // System aktualisieren
-  _continuous_system[0]->evaluateZeroFuncs(IContinuous::DISCRETE);
+  _continuous_systems[0]->evaluateZeroFuncs(IContinuous::DISCRETE);
   _event_system->getZeroFunc(zeroValue);
 }
 

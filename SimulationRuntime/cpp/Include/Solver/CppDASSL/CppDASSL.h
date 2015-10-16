@@ -118,15 +118,16 @@ private:
 
 
 //   ISystemProperties* _properties;
-   IContinuous** _continuous_system;
+   vector<IContinuous*> _continuous_systems;
 //   IEvent* _event_system;
 //   IMixedSystem* _mixed_system;
-   ITime** _time_system;
+   vector<ITime*> _time_systems;
    IEvent* _event_system;
-   IMixedSystem** _mixed_system;
-   SystemStateSelection** _system_state_selection;
+   vector<IMixedSystem*> _mixed_systems;
+   vector<IStateSelection*> _state_selections;
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
+   DynArrayDim2<int> _matrix;
 
 };
 #else
