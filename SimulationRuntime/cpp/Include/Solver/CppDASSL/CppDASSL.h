@@ -128,6 +128,7 @@ private:
 //   std::vector<MeasureTimeData> measureTimeFunctionsArray;
 //   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
    DynArrayDim2<int> _matrix;
+   double* _states;
 
 };
 #else

@@ -76,7 +76,7 @@ void CppDASSL::initialize()
     _mixed_systems[0] = dynamic_cast<IMixedSystem*>(_system);
     _state_selections[0] = dynamic_cast<IStateSelection*>(_system);
     _dimSys = _continuous_systems[0]->getDimContinuousStates();
-
+    _states = new double[_dimSys];
     for(int i = 1; i < _numThreads; i++)
     {
         IMixedSystem* clonedSystem = _system->clone();
@@ -88,6 +88,12 @@ void CppDASSL::initialize()
         initSystem->setInitial(true);
         initSystem->initialize();
         initSystem->setInitial(false);
+        for(size_t j=0; j<_state_selections[0]->getDimStateSets(); ++j) {
+            _state_selections[0]->getAMatrix(j,_matrix);
+            _state_selections[0]->getStates(j,_states);
+            _state_selections[i]->setAMatrix(j,_matrix);
+            _state_selections[i]->setStates(j,_states);
+        }
     }
 
 
@@ -198,8 +204,10 @@ void CppDASSL::solve(const SOLVERCALL action)
             for(size_t i = 0; i < _state_selections[0]->getDimStateSets(); i++)
             {
               _state_selections[0]->getAMatrix(i,_matrix);
+              _state_selections[0]->getStates(i,_states);
               for(int j=1; j<_numThreads; ++j) {
                 _state_selections[j]->setAMatrix(i,_matrix);
+                _state_selections[j]->setStates(i,_states);
               }
             }
             std::cout<<"StateSelection at "<< t <<std::endl;
@@ -252,8 +260,10 @@ void CppDASSL::solve(const SOLVERCALL action)
                 for(size_t i = 0; i < _state_selections[0]->getDimStateSets(); i++)
                 {
                   _state_selections[0]->getAMatrix(i,_matrix);
+                  _state_selections[0]->getStates(i,_states);
                   for(int j=1; j<_numThreads; ++j) {
                     _state_selections[j]->setAMatrix(i,_matrix);
+                    _state_selections[j]->setStates(i,_states);
                   }
                 }
                 _continuous_systems[0]->getContinuousStates(_y);
