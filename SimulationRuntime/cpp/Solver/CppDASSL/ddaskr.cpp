@@ -6407,7 +6407,7 @@ if(sparse) {
     /* Computing MAX */
             int threadnum=omp_get_thread_num();
             double d__1,d__2;
-            double d__5 = (d__1 = y[i__+1], std::abs(d__1)), d__6 = (d__2 = *h__ * yprime[i__+1], std::abs(d__2));
+            double d__5 = std::abs(y[i__+1]), d__6 = std::abs(*h__ * yprime[i__+1]);
             double d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__+1];
             double del = std::max(d__3,d__4);
             d__1 = *h__ * yprime[i__+1];
@@ -6418,7 +6418,6 @@ if(sparse) {
             std::vector<double> e(*neq);
             ywork[i__] += del;
             ypwork[i__] += *cj * del;
-            std::cout<<threadnum<<std::endl;
             (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
     //        if (*ires < 0) {
     //            return 0;
@@ -6439,7 +6438,7 @@ if(sparse) {
 } else {
     if(loglevel>4) std::cout<<"Calculating Jacobian"<<std::endl;
     #pragma omp parallel for num_threads(num_threads) schedule(static)
-        for (int i__ = 0; i__ < i__1; ++i__) {
+        for (int i__ = i__1-1; i__ >= 0; --i__) {
     /* Computing MAX */
     /* Computing MAX */
             double d__1,d__2;
@@ -6452,7 +6451,6 @@ if(sparse) {
             std::vector<double> ywork(y+1,y+ (*neq)+1);
             std::vector<double> ypwork(yprime+1, yprime+(*neq)+1);
             std::vector<double> e(*neq);
-            int threadnum=omp_get_thread_num();
             double delinv = 1. / del;
             ywork[i__] += del;
             ypwork[i__] += *cj * del;

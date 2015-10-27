@@ -14089,7 +14089,7 @@ template giveVariables(ModelInfo modelInfo, Context context,Boolean useFlatArray
       void <%lastIdentOfPath(name)%>::getReal(double* z)
       {
         const double* real_vars = _sim_vars->getRealVarsVector();
-        memcpy(z,real_vars,<%numRealvars(modelInfo)%>);
+        memcpy(z,real_vars,<%numRealvars(modelInfo)%>*sizeof(double));
       }
 
 
@@ -14104,7 +14104,7 @@ template giveVariables(ModelInfo modelInfo, Context context,Boolean useFlatArray
       void <%lastIdentOfPath(name)%>::getInteger(int* z)
       {
         const int* int_vars = _sim_vars->getIntVarsVector();
-        memcpy(z,int_vars,<%numIntvars(modelInfo)%>);
+        memcpy(z,int_vars,<%numIntvars(modelInfo)%>*sizeof(int));
       }
 
 
@@ -14112,7 +14112,7 @@ template giveVariables(ModelInfo modelInfo, Context context,Boolean useFlatArray
       void <%lastIdentOfPath(name)%>::getBoolean(bool* z)
       {
         const bool* bool_vars = _sim_vars->getBoolVarsVector();
-        memcpy(z,bool_vars,<%numBoolvars(modelInfo)%>);
+        memcpy(z,bool_vars,<%numBoolvars(modelInfo)%>*sizeof(bool));
       }
 
 
