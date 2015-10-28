@@ -87,7 +87,8 @@ private:
 
   double
     *_y,
-    *_yp;
+    *_yp,
+    _hOut;
   int
     _dimSys,               ///< Input       - (total) Dimension of system (=number of ODE)
     _dimZeroFunc,
