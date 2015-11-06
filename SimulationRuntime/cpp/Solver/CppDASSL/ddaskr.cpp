@@ -6426,8 +6426,13 @@ if(sparse) {
 
             for (int k = 1; k <= i__2; ++k) {
         /* L220: */
-                double val = (e[k-1] - delta[k]) * delinv;
-                if(std::abs(val)>1e-12) Asub[threadnum](k-1,i__)=val;
+                if(init) {
+                    if( (*A)(k-1,i__)!=0. ) Asub[threadnum](k-1,i__)=(e[k-1] - delta[k]) * delinv;
+                } else {
+                    double val = (e[k-1] - delta[k]) * delinv;
+                    if(std::abs(val)>1e-12) Asub[threadnum](k-1,i__)=val;
+                    init=true;
+                }
             }
 
     /* L210: */
@@ -6437,36 +6442,70 @@ if(sparse) {
     delete [] Asub;
 } else {
     if(loglevel>4) std::cout<<"Calculating Jacobian"<<std::endl;
-    #pragma omp parallel for num_threads(num_threads) schedule(static)
-        for (int i__ = i__1-1; i__ >= 0; --i__) {
-    /* Computing MAX */
-    /* Computing MAX */
-            double d__1,d__2;
-            double d__5 = std::abs(y[i__+1]), d__6 = std::abs(*h__ * yprime[i__+1]);
-            double d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__+1];
-            double del = std::max(d__3,d__4);
-            d__1 = *h__ * yprime[i__+1];
-            del = d_sign(&del, &d__1);
-            del = y[i__+1] + del - y[i__+1];
-            std::vector<double> ywork(y+1,y+ (*neq)+1);
-            std::vector<double> ypwork(yprime+1, yprime+(*neq)+1);
-            std::vector<double> e(*neq);
-            double delinv = 1. / del;
-            ywork[i__] += del;
-            ypwork[i__] += *cj * del;
-            (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
-    //        if (*ires < 0) {
-    //            return 0;
-    //        }
+    if(!reverseJacobi) {
+        #pragma omp parallel for num_threads(num_threads) schedule(static)
+            for (int i__ = i__1-1; i__ >= 0; --i__) {
+        /* Computing MAX */
+        /* Computing MAX */
+                double d__1,d__2;
+                double d__5 = std::abs(y[i__+1]), d__6 = std::abs(*h__ * yprime[i__+1]);
+                double d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__+1];
+                double del = std::max(d__3,d__4);
+                d__1 = *h__ * yprime[i__+1];
+                del = d_sign(&del, &d__1);
+                del = y[i__+1] + del - y[i__+1];
+                std::vector<double> ywork(y+1,y+ (*neq)+1);
+                std::vector<double> ypwork(yprime+1, yprime+(*neq)+1);
+                std::vector<double> e(*neq);
+                double delinv = 1. / del;
+                ywork[i__] += del;
+                ypwork[i__] += *cj * del;
+                (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
+        //        if (*ires < 0) {
+        //            return 0;
+        //        }
 
 
-            for (int k = 1; k <= i__2; ++k) {
-        /* L220: */
-                wm[ i__*(*neq) + k] = (e[k-1] - delta[k]) * delinv;
+                for (int k = 1; k <= i__2; ++k) {
+            /* L220: */
+                    wm[ i__*(*neq) + k] = (e[k-1] - delta[k]) * delinv;
+                }
+
+        /* L210: */
+            }
+    } else {
+         #pragma omp parallel for num_threads(num_threads) schedule(static)
+            for (int i__ = 0; i__ < i__1; ++i__) {
+        /* Computing MAX */
+        /* Computing MAX */
+                double d__1,d__2;
+                double d__5 = std::abs(y[i__+1]), d__6 = std::abs(*h__ * yprime[i__+1]);
+                double d__3 = squr * std::max(d__5,d__6), d__4 = 1. / ewt[i__+1];
+                double del = std::max(d__3,d__4);
+                d__1 = *h__ * yprime[i__+1];
+                del = d_sign(&del, &d__1);
+                del = y[i__+1] + del - y[i__+1];
+                std::vector<double> ywork(y+1,y+ (*neq)+1);
+                std::vector<double> ypwork(yprime+1, yprime+(*neq)+1);
+                std::vector<double> e(*neq);
+                double delinv = 1. / del;
+                ywork[i__] += del;
+                ypwork[i__] += *cj * del;
+                (*res)(x, &ywork[0], &ypwork[0], cj, &e[0], ires, par);
+        //        if (*ires < 0) {
+        //            return 0;
+        //        }
+
+
+                for (int k = 1; k <= i__2; ++k) {
+            /* L220: */
+                    wm[ i__*(*neq) + k] = (e[k-1] - delta[k]) * delinv;
+                }
+
+        /* L210: */
             }
 
-    /* L210: */
-        }
+    }
 }
 iwm[12]+=(*neq);
 

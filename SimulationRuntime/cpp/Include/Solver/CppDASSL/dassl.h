@@ -23,13 +23,13 @@ typedef int (*Jd_fp)(double *, double *, double *, double *, double *, void *);
 
 class dassl {
     public:
-        dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL) {
+        dassl() : num_threads(1), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL), init(false), reverseJacobi(false) {
             info.resize(20,0);
         }
-        dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL) {
+        dassl(unsigned int num_threads) : num_threads(num_threads), sparse(false), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL), init(false), reverseJacobi(false) {
             info.resize(20,0);
         }
-        dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL) {
+        dassl(unsigned int num_threads, bool sparse) : num_threads(num_threads), sparse(sparse), rtol(1e-6), atol(1e-6), loglevel(0), Symbolic(NULL), Numeric(NULL), A(NULL), init(false), reverseJacobi(false) {
             info.resize(20,0);
         }
         ~dassl() {
@@ -61,6 +61,9 @@ class dassl {
             } else {
                 info[2]=0;
             }
+        }
+        void setReverseJacobi(bool val) {
+            reverseJacobi=val;
         }
         int solve(S_fp res, int& _dimSys, double& t, double *y, double *yprime, double& tout, void *par, Ja_fp jac, P_fp psol, UC_fp rt, int& nrt, int* jroot, bool cont);
     private:
@@ -126,4 +129,6 @@ class dassl {
         umf::symbolic_type<double>* Symbolic;
         umf::numeric_type<double>* Numeric;
         sparsematrix_t* A;
+        bool init;
+        bool reverseJacobi;
 };

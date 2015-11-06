@@ -144,6 +144,9 @@ void CppDASSL::initialize()
     }
             //double* reals=new double[_continuous_systems[0]->getDimReal()];
     dasslSolver.setDenseOutput(true);
+    dasslSolver.setATol(dynamic_cast<ISolverSettings*>(_cppdasslsettings)->getATol());
+    dasslSolver.setRTol(dynamic_cast<ISolverSettings*>(_cppdasslsettings)->getRTol());
+    dasslSolver.setReverseJacobi(false);
     delete [] _yphelp;
 }
 
