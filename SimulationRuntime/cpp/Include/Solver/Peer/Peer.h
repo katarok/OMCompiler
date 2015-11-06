@@ -92,7 +92,8 @@ private:
     int
         _rstages,
         _rank,
-        _size;
+        _size,
+        _reuseJacobi;
 
     long int
         *_P;
@@ -108,7 +109,8 @@ private:
         *_Y2,
         *_Y3,
         *_T,
-        _h;
+        _h,
+        _hOut;
 
 
 
