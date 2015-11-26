@@ -89,7 +89,7 @@ void Peer::initialize()
     IContinuous *continuous_system = dynamic_cast<IContinuous*>(_system);
     ITime *time_system =  dynamic_cast<ITime*>(_system);
     IGlobalSettings* global_settings = dynamic_cast<ISolverSettings*>(_peersettings)->getGlobalSettings();
-    _numThreads=_cppdasslsettings->getGlobalSettings()->getSolverThreads();
+    _numThreads=_peersettings->getGlobalSettings()->getSolverThreads();
     _hOut = global_settings->gethOutput();
 #ifdef MPIPEER
     MPI_Comm_size(MPI_COMM_WORLD, &_size);
