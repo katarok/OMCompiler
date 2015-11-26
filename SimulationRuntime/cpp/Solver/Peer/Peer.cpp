@@ -89,6 +89,7 @@ void Peer::initialize()
     IContinuous *continuous_system = dynamic_cast<IContinuous*>(_system);
     ITime *time_system =  dynamic_cast<ITime*>(_system);
     IGlobalSettings* global_settings = dynamic_cast<ISolverSettings*>(_peersettings)->getGlobalSettings();
+    _numThreads=_cppdasslsettings->getGlobalSettings()->getSolverThreads();
     _hOut = global_settings->gethOutput();
 #ifdef MPIPEER
     MPI_Comm_size(MPI_COMM_WORLD, &_size);
@@ -327,7 +328,7 @@ void Peer::solve(const SOLVERCALL action)
     }
     t+=_h;
 #else
-#pragma omp parallel for
+#pragma omp parallel for num_threads(_numThreads)
     for(int _rank=0; _rank<5; ++_rank) {
         std::copy(_y,_y+_dimSys,&_Y1[_rank*_dimSys]);
         if (abs(_c[_rank]+1.)>1e-12)
@@ -461,7 +462,7 @@ void Peer::solve(const SOLVERCALL action)
 //                Y3.vector(i)=Y2*mtl::vector::trans(E[i][iall]);
             }
 
-#pragma omp parallel for
+#pragma omp parallel for num_threads(_numThreads)
         for(int _rank=0; _rank<5; ++_rank) {
             long int info;
             evalF(t+_c[_rank]*_h,&_Y2[_rank*_dimSys],&_F[_rank*_dimSys],_continuous_system[_rank], _time_system[_rank]);

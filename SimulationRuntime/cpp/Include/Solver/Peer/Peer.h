@@ -93,7 +93,8 @@ private:
         _rstages,
         _rank,
         _size,
-        _reuseJacobi;
+        _reuseJacobi,
+	_numThreads;
 
     long int
         *_P;
