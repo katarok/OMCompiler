@@ -11,6 +11,7 @@
     #include <SimCoreFactory/Policies/SolverSettingsVxWorksFactory.h>
     #include <SimCoreFactory/Policies/SystemVxWorksFactory.h>
     #include <SimCoreFactory/Policies/NonLinSolverVxWorksFactory.h>
+    #include <SimCoreFactory/Policies/SimObjectVxWorksFactory.h>
     #include <SimCoreFactory/Policies/LinSolverVxWorksFactory.h>
     /*Policy defines*/
 
@@ -18,6 +19,9 @@
     typedef SystemVxWorksFactory<BaseFactory> SimControllerPolicy;
     typedef SolverVxWorksFactory<BaseFactory> ConfigurationPolicy;
     //typedef LinSolverVxWorksFactory<BaseFactory> NonLinSolverPolicy;
+
+    typedef SimObjectVxWorksFactory<BaseFactory> SimObjectPolicy;
+
     typedef NonLinSolverVxWorksFactory<BaseFactory> NonLinSolverPolicy;
     typedef SolverSettingsVxWorksFactory<BaseFactory> SolverSettingsPolicy;
     typedef LinSolverVxWorksFactory<BaseFactory> LinSolverPolicy;
@@ -56,16 +60,18 @@
 
 #elif defined(OMC_BUILD) && !defined(RUNTIME_STATIC_LINKING)
 
-  /*Policy include*/
+
+    /*Policy include*/
     #include <SimCoreFactory/Policies/SolverOMCFactory.h>
     #include <SimCoreFactory/Policies/SolverSettingsOMCFactory.h>
     #include <SimCoreFactory/Policies/SystemOMCFactory.h>
     #include <SimCoreFactory/Policies/NonLinSolverOMCFactory.h>
     #include <SimCoreFactory/Policies/LinSolverOMCFactory.h>
-
+    #include <SimCoreFactory/Policies/SimObjectOMCFactory.h>
     /*Policy defines*/
     typedef OMCFactory BaseFactory;
     typedef SystemOMCFactory<BaseFactory> SimControllerPolicy;
+    typedef SimObjectOMCFactory<BaseFactory> SimObjectPolicy;
     typedef SolverOMCFactory<BaseFactory> ConfigurationPolicy;
     typedef LinSolverOMCFactory<BaseFactory> LinSolverPolicy;
     typedef NonLinSolverOMCFactory<BaseFactory> NonLinSolverPolicy;
@@ -73,37 +79,24 @@
 
 #elif defined(OMC_BUILD) && defined(RUNTIME_STATIC_LINKING)
 
-  /*include needed for object creation in factory classes*/
-  #include <Core/Utils/Modelica/ModelicaSimulationError.h>
-  #include <Core/Math/Array.h>
-  #include <Core/Solver/FactoryExport.h>
-  #include <Core/Solver/SolverSettings.h>
-  #include <Core/SimulationSettings/IGlobalSettings.h>
+  /*Policy include*/
   #include <SimCoreFactory/OMCFactory/OMCFactory.h>
-  #include <SimCoreFactory/OMCFactory/StaticOMCFactory.h>
-    /*Base Policy include*/
-    #include <SimCoreFactory/Policies/SolverOMCFactory.h>
-    #include <SimCoreFactory/Policies/SolverSettingsOMCFactory.h>
-    #include <SimCoreFactory/Policies/SystemOMCFactory.h>
-    #include <SimCoreFactory/Policies/NonLinSolverOMCFactory.h>
-    #include <SimCoreFactory/Policies/LinSolverOMCFactory.h>
-    /*Policy include*/
-    #include <SimCoreFactory/Policies/StaticSolverOMCFactory.h>
-    #include <SimCoreFactory/Policies/StaticSolverSettingsOMCFactory.h>
-    #include <SimCoreFactory/Policies/StaticSystemOMCFactory.h>
-    #include <SimCoreFactory/Policies/StaticLinSolverOMCFactory.h>
-    #include <SimCoreFactory/Policies/StaticNonLinSolverOMCFactory.h>
-    /*Policy defines*/
-    typedef StaticOMCFactory BaseFactory;
-    typedef StaticSystemOMCFactory<BaseFactory> SimControllerPolicy;
-    typedef StaticSolverOMCFactory<BaseFactory> ConfigurationPolicy;
-    typedef StaticLinSolverOMCFactory<BaseFactory> LinSolverPolicy;
-    typedef StaticNonLinSolverOMCFactory<BaseFactory> NonLinSolverPolicy;
-    typedef StaticSolverSettingsOMCFactory<BaseFactory> SolverSettingsPolicy;
+  #include <SimCoreFactory/Policies/StaticSolverOMCFactory.h>
+  #include <SimCoreFactory/Policies/StaticSolverSettingsOMCFactory.h>
+  #include <SimCoreFactory/Policies/StaticSystemOMCFactory.h>
+  #include <SimCoreFactory/Policies/StaticLinSolverOMCFactory.h>
+  #include <SimCoreFactory/Policies/StaticNonLinSolverOMCFactory.h>
+  #include <SimCoreFactory/Policies/StaticSimObjectOMCFactory.h>
+  /*Policy defines*/
+  typedef BaseOMCFactory BaseFactory;
+  typedef StaticSystemOMCFactory<BaseFactory> SimControllerPolicy;
+  typedef StaticSimObjectOMCFactory<BaseFactory> SimObjectPolicy;
+  typedef StaticSolverOMCFactory<BaseFactory> ConfigurationPolicy;
+  typedef StaticLinSolverOMCFactory<BaseFactory> LinSolverPolicy;
+  typedef StaticNonLinSolverOMCFactory<BaseFactory> NonLinSolverPolicy;
+  typedef StaticSolverSettingsOMCFactory<BaseFactory> SolverSettingsPolicy;
 
 //#else
 //    #error "operating system not supported"
 #endif
-
 /** @} */ // end of simcorefactoriesPolicies
-

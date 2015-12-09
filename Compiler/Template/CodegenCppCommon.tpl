@@ -96,6 +96,7 @@ template crefStrForWriteOutput(ComponentRef cr)
   case CREF_IDENT(__) then '<%ident%><%subscriptsStrForWriteOutput(subscriptLst)%>'
   // Are these even needed? Function context should only have CREF_IDENT :)
   case CREF_QUAL(ident = "$DER") then 'der(<%crefStrForWriteOutput(componentRef)%>)'
+  case CREF_QUAL(ident = "$CLKPRE") then 'previous(<%crefStrForWriteOutput(componentRef)%>)'
   case CREF_QUAL(__) then '<%ident%><%subscriptsStrForWriteOutput(subscriptLst)%>.<%crefStrForWriteOutput(componentRef)%>'
   else "CREF_NOT_IDENT_OR_QUAL"
 end crefStrForWriteOutput;
@@ -120,6 +121,7 @@ template crefStr(ComponentRef cr)
   case CREF_IDENT(__) then '<%ident%><%subscriptsStr(subscriptLst)%>'
   // Are these even needed? Function context should only have CREF_IDENT :)
   case CREF_QUAL(ident = "$DER") then 'der(<%crefStr(componentRef)%>)'
+  case CREF_QUAL(ident = "$CLKPRE") then 'previous(<%crefStr(componentRef)%>)'
   case CREF_QUAL(__) then '<%ident%><%subscriptsStr(subscriptLst)%>.<%crefStr(componentRef)%>'
   else "CREF_NOT_IDENT_OR_QUAL"
 end crefStr;
@@ -788,9 +790,9 @@ template expTypeFlag(DAE.Type ty, Integer flag)
   match ty case T_COMPLEX(complexClassType=EXTERNAL_OBJ(__)) then
     '<%expTypeShort(ty)%>'
   else match ty case T_COMPLEX(complexClassType=RECORD(path=rname)) then
-    '<%underscorePath(rname)%>Type &'
+    '<%underscorePath(rname)%>Type&'
   else match ty case T_COMPLEX(__) then
-    '<%underscorePath(ClassInf.getStateName(complexClassType))%> &'
+    '<%underscorePath(ClassInf.getStateName(complexClassType))%>&'
    else
     '<%expTypeShort(ty)%>'
 
@@ -838,12 +840,12 @@ template expTypeShortSPS(DAE.Type type)
 ::=
   match type
   case T_INTEGER(__)         then "INT"
-  case T_REAL(__)        then "REAL"
+  case T_REAL(__)        then "LREAL"
   case T_STRING(__)      then if acceptMetaModelicaGrammar() then "metatype" else "string"
   case T_BOOL(__)        then "BOOL"
   case T_ENUMERATION(__) then "INT"
   /* assumming real for uknown type! */
-  case T_UNKNOWN(__)     then "REAL"
+  case T_UNKNOWN(__)     then "LREAL"
   case T_ANYTYPE(__)     then "type not supported"
   case T_ARRAY(__)       then expTypeShortSPS(ty)
   case T_COMPLEX(complexClassType=EXTERNAL_OBJ(__))
@@ -858,12 +860,12 @@ template expTypeShortMLPI(DAE.Type type)
 ::=
   match type
   case T_INTEGER(__)     then "MLPI_IEC_INT"
-  case T_REAL(__)        then "MLPI_IEC_REAL"
+  case T_REAL(__)        then "MLPI_IEC_LREAL"
   case T_STRING(__)      then if acceptMetaModelicaGrammar() then "metatype" else "string"
   case T_BOOL(__)        then "MLPI_IEC_BOOL"
   case T_ENUMERATION(__) then "MLPI_IEC_INT"
   /* assumming real for uknown type! */
-  case T_UNKNOWN(__)     then "MLPI_IEC_REAL"
+  case T_UNKNOWN(__)     then "MLPI_IEC_LREAL"
   case T_ANYTYPE(__)     then "type not supported"
   case T_ARRAY(__)       then expTypeShortSPS(ty)
   case T_COMPLEX(complexClassType=EXTERNAL_OBJ(__))
@@ -1119,7 +1121,7 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
           <%tmp_shape%>.push_back(0);<%\n%>
           <%tmp_idx%>.push_back(<%arrIndex%>++);<%\n%>
           <%tmp_indeces%>.push_back(<%tmp_idx%>);<%\n%>
-          create_array_from_shape(make_pair(<%tmp_shape%>,<%tmp_indeces%>),<%reductionBodyExpr%>,<%res%>);
+          fill_array_from_shape(make_pair(<%tmp_shape%>,<%tmp_indeces%>),<%reductionBodyExpr%>,<%res%>);
           >>
         else
           '<%res%>(<%arrIndex%>++) = <%reductionBodyExpr%>;'
@@ -1185,7 +1187,7 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
          "")
        <<
        <%arrIndex%> = 1;
-       /* Note: skip dimensioning of <%res%> because create_array_from_shape does it
+       /* Note: skip dimensioning of <%res%> because create_array_from_shape does it*/
        <% match typeof(r.expr)
         case T_COMPLEX(complexClassType = record_state) then
           let rec_name = '<%underscorePath(ClassInf.getStateName(record_state))%>'
@@ -1198,12 +1200,13 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
             case DIM_ENUM(__) then '<%dim_vec%>.push_back(<%size%>);'
             else error(sourceInfo(), 'array reduction unable to generate code for element of unknown dimension sizes; type <%unparseType(typeof(r.expr))%>: <%ExpressionDump.printExpStr(r.expr)%>')
             ; separator = ", "
-          '<%dimSizes%>
+          '<%dim_vec%>.push_back(<%length%>);
+           <%dimSizes%>
            <%res%>.setDims(<%dim_vec%>);'
 
         else
           '<%res%>.setDims(<%length%>);'%>
-       */
+
        >>
      else if ri.defaultValue then
      <<
@@ -1239,8 +1242,8 @@ template daeExpReduction(Exp exp, Context context, Text &preExp,
     <%firstValue%>
     <% if resTail then '<%resTail%> = &<%res%>;' %>
     <%loop%>
-    <% if not ri.defaultValue then 'if (!<%foundFirst%>) MMC_THROW_INTERNAL();' %>
-    <% if resTail then '*<%resTail%> = mmc_mk_nil();' %>
+    <% if not ri.defaultValue then 'if (!<%foundFirst%>) throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Internal error");' %>
+    <% if resTail then '*<%resTail%> = NULL;' %>
     <% resTmp %> = <% res %>;
   }<%\n%>
   >>
@@ -1438,7 +1441,7 @@ case ARRAY(array=_::_, ty = arraytype) then
                      let params =    daeExpArray2(array,arrayVar,ArrayType,arrayTypeStr,context,preExp,varDecls,simCode, &extraFuncs,&extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
                           ""
                       else
-                       let &varDecls += '<%ArrayType%> <%arrayVar%>;'
+                       let &varDecls += '<%ArrayType%> <%arrayVar%>;<%\n%>'
                        daeExpArray3(array, arrayVar, ArrayType, context, preExp, varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
   arrayVar
 case ARRAY(__) then
@@ -1462,7 +1465,7 @@ template daeExpArray3(list<Exp> array,  String arrayVar, String ArrayType, Conte
 let arraycreate = (array |> e hasindex i0 fromindex 1 =>
        let subArraycall = daeExp(e, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
        <<
-       <%arrayVar%>.append(<%i0%>, <%subArraycall%>);
+       <%arrayVar%>.append(<%i0%>, <%subArraycall%>,<%listLength(array)%>);
        >> ;separator="\n")
        let &preExp +=
        <<
@@ -1930,13 +1933,13 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
   case CALL(path=IDENT(name="div"), expLst={e1,e2}) then
     let var1 = daeExp(e1, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let var2 = daeExp(e2, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    'boost::math::trunc(<%var1%>/<%var2%>)'
+    'omcpp::trunc(<%var1%>/<%var2%>)'
 
   case CALL(path=IDENT(name="div"), expLst={e1,e2,index}) then
     // TODO: should trigger event if result changes discontinuously
     let var1 = daeExp(e1, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let var2 = daeExp(e2, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    'boost::math::trunc(<%var1%>/<%var2%>)'
+    'omcpp::trunc(<%var1%>/<%var2%>)'
 
   case CALL(path=IDENT(name="mod"), expLst={e1,e2}, attr=attr as CALL_ATTR(__)) then
     let var1 = daeExp(e1, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
@@ -1974,7 +1977,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
 
   case CALL(path=IDENT(name="fill"), expLst=val::dims, attr=attr as CALL_ATTR(__)) then
     let valExp = daeExp(val, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    let dimsExp = (dims |> dim =>    daeExp(dim, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator="][")
+    let dimsExp = (dims |> dim =>    daeExp(dim, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=",")
 
     let ty_str = '<%expTypeShort(attr.ty)%>'
   //previous multi_array
@@ -2073,7 +2076,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let sExp = daeExp(s, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let formatExp = daeExp(format, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let typeStr = expTypeFromExpModelica(s)
-    let &preExp += 'string <%tvar%> = lexical_cast<std::string>(<%sExp%>);<%\n%>'
+    let &preExp += 'string <%tvar%> = omcpp::to_string(<%sExp%>);<%\n%>'
     '<%tvar%>'
 
    case CALL(path=IDENT(name="String"),
@@ -2084,7 +2087,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let minlenExp = daeExp(minlen, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let leftjustExp = daeExp(leftjust, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let typeStr = expTypeFromExpModelica(s)
-    let &preExp += 'string <%tvar%> = lexical_cast<string>(<%sExp%>);<%\n%>'
+    let &preExp += 'string <%tvar%> = omcpp::to_string(<%sExp%>);<%\n%>'
     '<%tvar%>'
 
 
@@ -2097,7 +2100,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let minlenExp = daeExp(minlen, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let leftjustExp = daeExp(leftjust, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let signdigExp = daeExp(signdig, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    let &preExp +=  'string <%tvar%> = lexical_cast<string>(<%sExp%>);<%\n%>'
+    let &preExp +=  'string <%tvar%> = omcpp::to_string(<%sExp%>);<%\n%>'
     '<%tvar%>'
 
   case CALL(path=IDENT(name="delay"),
@@ -2353,10 +2356,18 @@ template daeExpBinary(Operator it, Exp exp1, Exp exp2, Context context, Text &pr
     let tvar = tempDecl(expTypeArrayDims(ty.ty, dims), &varDecls /*BUFD*/)
     let &preExp += 'subtract_array<<%type%>>(<%e1%>, <%e2%>, <%tvar%>);<%\n%>'
     '<%tvar%>'
-  case MUL_ARR(__) then "daeExpBinary:ERR MUL_ARR not supported"
+  case MUL_ARR(ty=T_ARRAY(dims=dims)) then
+    let type = expTypeShort(ty.ty)
+    let tvar = tempDecl(expTypeArrayDims(ty.ty, dims), &varDecls /*BUFD*/)
+    let &preExp += 'multiply_array_elem_wise<<%type%>>(<%e1%>, <%e2%>, <%tvar%>);<%\n%>'
+    '<%tvar%>'
   case DIV_ARR(__) then "daeExpBinary:ERR DIV_ARR not supported"
   case ADD_ARRAY_SCALAR(__) then "daeExpBinary:ERR ADD_ARRAY_SCALAR not supported"
-  case SUB_SCALAR_ARRAY(__) then "daeExpBinary:ERR SUB_SCALAR_ARRAY not supported"
+  case SUB_SCALAR_ARRAY(ty=T_ARRAY(dims=dims)) then
+    let type = expTypeShort(ty.ty)
+    let tvar = tempDecl(expTypeArrayDims(ty.ty, dims), &varDecls /*BUFD*/)
+    let &preExp += 'subtract_array_scalar<<%type%>>(<%e2%>, <%e1%>, <%tvar%>);<%\n%>'
+    '<%tvar%>'
   case MUL_SCALAR_PRODUCT(__) then
     let type = expTypeShort(ty)
     'dot_array<<%type%>>(<%e1%>, <%e2%>)'
@@ -2722,7 +2733,7 @@ case STMT_TUPLE_ASSIGN(exp=CALL(__)) then
 
   let lhsCrefs = (expExpLst |> cr hasindex i1 fromindex 0 =>
                     let rhsStr = 'get<<%i1%>>(<%retStruct%>.data)'
-                    writeLhsCref(cr, rhsStr, context, &afterExp, &varDecls, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+                    writeLhsCref(cr, rhsStr, context, &preExp, &varDecls, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
                   ;separator="\n";empty)
   <<
   // algStmtTupleAssign: preExp printout <%marker%>

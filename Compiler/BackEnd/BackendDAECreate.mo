@@ -134,7 +134,7 @@ algorithm
   reqnarr := BackendEquation.listEquation(reqns);
   ieqnarr := BackendEquation.listEquation(ieqns);
   einfo := BackendDAE.EVENT_INFO(timeEvents, {}, {}, {}, 0);
-  symjacs := {(NONE(), ({}, {}, ({}, {})), {}), (NONE(), ({}, {}, ({}, {})), {}), (NONE(), ({}, {}, ({}, {})), {}), (NONE(), ({}, {}, ({}, {})), {})};
+  symjacs := {(NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {})};
   outBackendDAE := BackendDAE.DAE(BackendDAEUtil.createEqSystem(vars_1, eqnarr, {}, BackendDAE.UNKNOWN_PARTITION(), reqnarr)::{},
                                   BackendDAE.SHARED(knvars,
                                                     extVars,
@@ -637,7 +637,7 @@ algorithm
         dae_var_attr = DAEUtil.setProtectedAttr(dae_var_attr, b);
         dae_var_attr = setMinMaxFromEnumeration(t, dae_var_attr);
         (dae_var_attr, source, _) = Inline.inlineStartAttribute(dae_var_attr, source, (SOME(functionTree), {DAE.NORM_INLINE()}));
-    ts = BackendDAEUtil.setTearingSelectAttribute(comment);
+        ts = BackendDAEUtil.setTearingSelectAttribute(comment);
       then
         (BackendDAE.VAR(name, kind_1, dir, prl, tp, NONE(), NONE(), dims, source, dae_var_attr, ts, comment, ct, DAEUtil.toDAEInnerOuter(io), false));
   end match;

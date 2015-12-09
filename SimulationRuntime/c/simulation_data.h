@@ -47,7 +47,7 @@
 #define omc_dummyVarInfo {-1,"","",omc_dummyFileInfo}
 #define omc_dummyEquationInfo {-1,0,"",-1,NULL}
 #define omc_dummyFunctionInfo {-1,"",omc_dummyFileInfo}
-#define omc_dummyRealAttribute {NULL,NULL,NULL,DBL_MAX,DBL_MIN,0,0,1.0,0,0.0}
+#define omc_dummyRealAttribute {NULL,NULL,DBL_MAX,-DBL_MAX,0,0,1.0,0,0.0}
 
 #if defined(_MSC_VER)
 #define set_struct(TYPE, x, info) { const TYPE tmp = info; x = tmp; }
@@ -208,7 +208,6 @@ typedef struct DATA_STRING_ALIAS
 /* collect all attributes from one variable in one struct */
 typedef struct REAL_ATTRIBUTE
 {
-  modelica_string quantity;            /* = "" */
   modelica_string unit;                /* = "" */
   modelica_string displayUnit;         /* = "" */
   modelica_real min;                   /* = -Inf */
@@ -222,7 +221,6 @@ typedef struct REAL_ATTRIBUTE
 
 typedef struct INTEGER_ATTRIBUTE
 {
-  modelica_string quantity;            /* = "" */
   modelica_integer min;                /* = -Inf */
   modelica_integer max;                /* = +Inf */
   modelica_boolean fixed;              /* depends on the type */
@@ -232,7 +230,6 @@ typedef struct INTEGER_ATTRIBUTE
 
 typedef struct BOOLEAN_ATTRIBUTE
 {
-  modelica_string quantity;            /* = "" */
   modelica_boolean fixed;              /* depends on the type */
   modelica_boolean useStart;           /* = false */
   modelica_boolean start;              /* = false */
@@ -240,7 +237,6 @@ typedef struct BOOLEAN_ATTRIBUTE
 
 typedef struct STRING_ATTRIBUTE
 {
-  modelica_string quantity;            /* = "" */
   modelica_boolean useStart;           /* = false */
   modelica_string start;               /* = "" */
 }STRING_ATTRIBUTE;
@@ -303,6 +299,8 @@ typedef struct NONLINEAR_SYSTEM_DATA
   modelica_real *nlsx;                 /* x */
   modelica_real *nlsxOld;              /* previous x */
   modelica_real *nlsxExtrapolation;    /* extrapolated values for x from old and old2 - used as initial guess */
+
+  void *oldValueList;                  /* old values organized in a sorted list for extrapolation and interpolate, respectively */
 
   modelica_integer method;             /* used for linear tearing system if 1: Newton step is done otherwise 0 */
   modelica_real residualError;         /* not used */
@@ -504,6 +502,18 @@ typedef struct CLOCK_DATA {
   long cnt;
 } CLOCK_DATA;
 
+enum EVAL_CONTEXT
+{
+  CONTEXT_UNKNOWN = 0,
+
+  CONTEXT_ODE,
+  CONTEXT_ALGEBRAIC,
+  CONTEXT_EVENTS,
+  CONTEXT_JACOBIAN,
+
+  CONTEXT_MAX
+};
+
 typedef struct SIMULATION_INFO
 {
   modelica_real startTime;
@@ -519,6 +529,13 @@ typedef struct SIMULATION_INFO
   int nlsMethod;                       /* nonlinear solver */
   int newtonStrategy;                  /* newton damping strategy solver */
   int nlsCsvInfomation;                /* = 1 csv files with detailed nonlinear solver process are generated */
+
+  /* current context evaluation, set by dassl and used for extrapolation
+   * of next non-linear guess */
+  int currentContext;
+  int currentContextOld;
+  int jacobianEvals;                   /* number of different columns to evaluate functionODE */
+  int currentJacobianEval;             /* current column to evaluate functionODE for Jacobian*/
 
   double lambda;                       /* homotopy parameter E [0, 1.0] */
 
@@ -548,7 +565,7 @@ typedef struct SIMULATION_INFO
   modelica_boolean* relationsPre;
   modelica_boolean* storedRelations;   /* this array contains a copy of relations each time the event iteration starts */
   modelica_real* mathEventsValuePre;
-  long* zeroCrossingIndex;             /* := {0, 1, 2, ..., data->modelData.nZeroCrossings-1}; pointer for a list events at event instants */
+  long* zeroCrossingIndex;             /* := {0, 1, 2, ..., data->modelData->nZeroCrossings-1}; pointer for a list events at event instants */
 
   /* old vars for event handling */
   modelica_real timeValueOld;
@@ -611,8 +628,8 @@ typedef struct DATA
 {
   RINGBUFFER* simulationData;          /* RINGBUFFER of SIMULATION_DATA */
   SIMULATION_DATA **localData;
-  MODEL_DATA modelData;                /* static stuff */
-  SIMULATION_INFO simulationInfo;
+  MODEL_DATA *modelData;                /* static stuff */
+  SIMULATION_INFO *simulationInfo;
   struct OpenModelicaGeneratedFunctionCallbacks *callback;
 } DATA;
 

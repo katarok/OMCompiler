@@ -2225,7 +2225,7 @@ algorithm
 
     case (DAE.T_FUNCTION(funcArg = params, funcResultType = restype, source = ts))
       equation
-        funcstr = stringDelimitList(List.map(ts, Absyn.pathString), ", ");
+        funcstr = stringDelimitList(list(Absyn.pathString(pt) for pt in ts), ", ");
         paramstrs = List.map(params, unparseParam);
         paramstr = stringDelimitList(paramstrs, ", ");
         restypestr = unparseType(restype);
@@ -5125,7 +5125,7 @@ algorithm
       equation
         false = isArray(t1);
         false = isArray(t2);
-        equality(t1 = t2);
+        true = equivtypes(t1,t2);
         c = constAnd(c1, c2);
       then
         DAE.PROP(t1,c);
@@ -6489,7 +6489,7 @@ algorithm
 
     else
       equation
-        pathStr = stringDelimitList(List.map(pathLst, Absyn.pathString), ", ");
+        pathStr = stringDelimitList(list(Absyn.pathString(p) for p in pathLst), ", ");
         bindingsStr = polymorphicBindingsStr(bindings);
         solvedBindingsStr = polymorphicBindingsStr(solvedBindings);
         unsolvedBindingsStr = polymorphicBindingsStr(unsolvedBindings);
@@ -7839,7 +7839,7 @@ algorithm
     // yeha, we have some
     case (ts)
       equation
-        s = " origin: " + stringDelimitList(List.map(ts, Absyn.pathString), ", ");
+        s = " origin: " + stringDelimitList(list(Absyn.pathString(t) for t in ts), ", ");
       then
         s;
   end matchcontinue;
@@ -8249,13 +8249,13 @@ public function makeCallAttr
   output DAE.CallAttributes callAttr;
 protected
   Boolean isImpure,isT,isB;
-  DAE.FunctionBuiltin builtin;
-  DAE.InlineType inline;
+  DAE.FunctionBuiltin isbuiltin;
+  DAE.InlineType isinline;
 algorithm
-  DAE.FUNCTION_ATTRIBUTES(isBuiltin=builtin,isImpure=isImpure,inline=inline) := attr;
+  DAE.FUNCTION_ATTRIBUTES(isBuiltin=isbuiltin,isImpure=isImpure,inline=isinline) := attr;
   isT := isTuple(ty);
-  isB := isBuiltin(builtin);
-  callAttr := DAE.CALL_ATTR(ty,isT,isB,isImpure,false,inline,DAE.NO_TAIL());
+  isB := isBuiltin(isbuiltin);
+  callAttr := DAE.CALL_ATTR(ty,isT,isB,isImpure,false,isinline,DAE.NO_TAIL());
 end makeCallAttr;
 
 public function getFuncArg

@@ -69,6 +69,7 @@ public function createSimCode "function createSimCode
   input BackendDAE.BackendDAE inBackendDAE;
   input BackendDAE.BackendDAE inInitDAE;
   input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input Option<BackendDAE.BackendDAE> inInitDAE_lambda0;
   input list<BackendDAE.Equation> inRemovedInitialEquationLst;
   input list<BackendDAE.Var> inPrimaryParameters "already sorted";
   input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
@@ -193,7 +194,7 @@ algorithm
       //-----
       System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_HPCOM_MODULES);
       (simCode,(lastEqMappingIdx,equationSccMapping)) =
-          SimCodeUtil.createSimCode( inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions,
+          SimCodeUtil.createSimCode( inBackendDAE, inInitDAE, inUseHomotopy, inInitDAE_lambda0, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions,
                                      externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args );
 
       simVarMapping = SimCodeUtil.getSimVarMappingOfBackendMapping(simCode.backendMapping);
@@ -586,7 +587,7 @@ algorithm
   oContractedLevelfixTasks := match(iTaskGraphMeta, iContractedTasks, iLevelNodes, iContractedLevelfixTasks)
     case(HpcOmTaskGraph.TASKGRAPHMETA(exeCosts=exeCosts,inComps=inComps),_,head::rest,_)
       equation
-        sortedHead = List.sort(head, function HpcOmTaskGraph.compareTasksByExecTime(iExeCosts=exeCosts,iTaskComps=inComps));
+        sortedHead = List.sort(head, function HpcOmTaskGraph.compareTasksByExecTime(iExeCosts=exeCosts,iTaskComps=inComps,iDescending=false));
         //print("applyGRSForLevelFixScheduler - Handling level with sorted nodes: " + stringDelimitList(List.map(sortedHead, intString), ",") + "\n");
         sortedHeadArray = listArray(sortedHead);
 

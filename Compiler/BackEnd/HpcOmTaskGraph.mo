@@ -1153,6 +1153,7 @@ public function compareTasksByExecTime "author: marcusw
   input Integer iTask2;
   input  array<list<Integer>> iTaskComps;
   input array<tuple<Integer, Real>> iExeCosts;
+  input Boolean iDescending; //true if the result list should be in descending order
   output Boolean oResult;
 protected
   Real exeCosts1, exeCosts2;
@@ -1163,7 +1164,11 @@ algorithm
   exeCosts1 := addUpExeCostsForNode(taskComps1, iExeCosts, 0.0);
   exeCosts2 := addUpExeCostsForNode(taskComps2, iExeCosts, 0.0);
   //print("compareTasksByExecTime: Task '" + intString(iTask1) + "' with exeCost '" + realString(exeCosts1) + "' and Task '" + intString(iTask2) + "' with exeCost '" + realString(exeCosts2) + "'\n");
-  oResult := realGt(exeCosts1, exeCosts2);
+  if(iDescending) then
+    oResult := realLt(exeCosts1, exeCosts2);
+  else
+    oResult := realGt(exeCosts1, exeCosts2);
+  end if;
 end compareTasksByExecTime;
 
 protected function getVarsBySCC "author: marcusw,waurich
@@ -2314,6 +2319,8 @@ algorithm
           newNodeList := successor::newNodeList;
         end if;
       end while;
+      newNodeList := List.sort(newNodeList, intGt);
+      newNodeList := List.sortedUnique(newNodeList, intEq);
       zeroFuncTaskGraph := arrayUpdate(zeroFuncTaskGraph, zeroFuncNodeIdx, newNodeList);
     end if;
     nodeIdx := nodeIdx - 1;
@@ -2671,31 +2678,6 @@ algorithm
   sccSimEqMapping := arrayCreate(arrayLength(taskGraph),{-1});
   HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraph, taskGraphData, name, "", {}, {}, sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,true,true));
 end dumpTaskGraph;
-
-public function dumpBipartiteGraph
-  input BackendDAE.BackendDAE dae;
-  input String fileName;
-protected
-  BackendDAE.Variables vars;
-  BackendDAE.EquationArray eqs;
-  BackendDAE.EqSystems eqSysts;
-  BackendDAE.IncidenceMatrix m,mT;
-  list<BackendDAE.Equation> eqLst;
-  list<BackendDAE.Var> varLst;
-  list<tuple<Boolean,String>> varAtts,eqAtts;
-algorithm
-  BackendDAE.DAE(eqs=eqSysts) := dae;
-  eqLst := List.flatten(List.map(List.map(eqSysts,BackendEquation.getEqnsFromEqSystem),BackendEquation.equationList));
-  varLst := List.flatten(List.map(List.map(eqSysts,BackendVariable.daeVars),BackendVariable.varList));
-  vars := BackendVariable.listVar1(varLst);
-  eqs := BackendEquation.listEquation(eqLst);
-  // build the incidence matrix for the whole System
-  (m,mT) := BackendDAEUtil.incidenceMatrixDispatch(vars,eqs, BackendDAE.NORMAL());
-  m := Array.map(m,function List.filter1OnTrue(inFilterFunc=intGt,inArg1=0));
-  varAtts := List.threadMap(List.fill(false,listLength(varLst)),List.fill("",listLength(varLst)),Util.makeTuple);
-  eqAtts := List.threadMap(List.fill(false,listLength(eqLst)),List.fill("",listLength(eqLst)),Util.makeTuple);
-  HpcOmEqSystems.dumpEquationSystemBipartiteGraph2(vars,eqs,m,varAtts,eqAtts,"BipartiteGraph_"+fileName);
-end dumpBipartiteGraph;
 
 public function dumpAsGraphMLSccLevel "author: marcusw, waurich
   Write out the given graph as a graphml file."

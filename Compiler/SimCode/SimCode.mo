@@ -92,6 +92,7 @@ uniontype SimCode
     list<ClockedPartition> clockedPartitions;
     Boolean useHomotopy "true if homotopy(...) is used during initialization";
     list<SimEqSystem> initialEquations;
+    list<SimEqSystem> initialEquations_lambda0;
     list<SimEqSystem> removedInitialEquations;
     list<SimEqSystem> startValueEquations;
     list<SimEqSystem> nominalValueEquations;
@@ -123,6 +124,7 @@ uniontype SimCode
     //*** a protected section *** not exported to SimCodeTV
     HashTableCrILst.HashTable varToIndexMapping;
     HashTableCrefToSimVar crefToSimVarHT "hidden from typeview - used by cref2simvar() for cref -> SIMVAR lookup available in templates.";
+    HashTable.HashTable crefToClockIndexHT "map variables to clock indices";
     Option<BackendMapping> backendMapping;
     //FMI 2.0 data for model structure
     Option<FmiModelStructure> modelStructure;

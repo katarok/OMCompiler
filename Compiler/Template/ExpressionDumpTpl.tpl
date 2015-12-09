@@ -61,9 +61,16 @@ match exp
     let func_str = AbsynDumpTpl.dumpPathNoQual(path)
     let argl = dumpExpList(expList, stringDelimiter, ", ")
     'function <%func_str%>(<%argl%>)'
+  case ARRAY(array={}) then
+    if (Flags.getConfigBool(Flags.MODELICA_OUTPUT)) then
+    'fill(0,0)'
+    else
+    let expl = dumpExpList(array, stringDelimiter, ", ")
+    '<%if typeinfo() then (if scalar then '/* scalar <%unparseType(ty)%>*/' else '/* non-scalar <%unparseType(ty)%> */ ')%>{<%expl%>}'
   case ARRAY(__) then
     let expl = dumpExpList(array, stringDelimiter, ", ")
     '<%if typeinfo() then (if scalar then '/* scalar <%unparseType(ty)%>*/' else '/* non-scalar <%unparseType(ty)%> */ ')%>{<%expl%>}'
+
   case MATRIX(__) then
     let mat_str = (matrix |> row => dumpExpList(row, stringDelimiter, ", ") ;separator="}, {")
     '<%if typeinfo() then '/* matrix <%unparseType(ty) %> */ '%>{{<%mat_str%>}}'
@@ -213,6 +220,9 @@ match cref
   case CREF_QUAL(__) then
     let sub_str = dumpSubscripts(subscriptLst)
     let cref_str = dumpCref(componentRef)
+    if (Flags.getConfigBool(Flags.MODELICA_OUTPUT)) then
+    '<%ident%><%sub_str%>__<%cref_str%>'
+    else
     '<%ident%><%sub_str%>.<%cref_str%>'
   case WILD() then '_'
   case OPTIMICA_ATTR_INST_CREF(__) then
@@ -223,6 +233,10 @@ end dumpCref;
 template dumpSubscripts(list<DAE.Subscript> subscripts)
 ::=
 if subscripts then
+  if (Flags.getConfigBool(Flags.MODELICA_OUTPUT)) then
+  let sub_str = (subscripts |> sub => dumpSubscript(sub) ;separator="_")
+  '_<%sub_str%>'
+  else
   let sub_str = (subscripts |> sub => dumpSubscript(sub) ;separator=",")
   '[<%sub_str%>]'
 end dumpSubscripts;

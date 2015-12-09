@@ -30,12 +30,12 @@
 
 #include "simulation_info_json.h"
 #include "simulation_runtime.h"
-#include <expat.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include "util/rtclock.h"
 #include "util/omc_mmap.h"
+#include "solver/model_help.h"
 
 static inline const char* skipSpace(const char* str)
 {
@@ -365,7 +365,7 @@ static void readInfoJson(const char *str,MODEL_DATA_XML *xml)
   assertChar(str,'}');
 }
 
-void modelInfoJsonInit(MODEL_DATA_XML* xml)
+void modelInfoInit(MODEL_DATA_XML* xml)
 {
   omc_mmap_read mmap_reader = {0};
   rt_tick(0);
@@ -391,31 +391,31 @@ void modelInfoJsonInit(MODEL_DATA_XML* xml)
   omc_mmap_close_read(mmap_reader);
 }
 
-FUNCTION_INFO modelInfoJsonGetFunction(MODEL_DATA_XML* xml, size_t ix)
+FUNCTION_INFO modelInfoGetFunction(MODEL_DATA_XML* xml, size_t ix)
 {
   if(xml->functionNames == NULL)
   {
-    modelInfoJsonInit(xml);
+    modelInfoInit(xml);
   }
   assert(xml->functionNames);
   return xml->functionNames[ix];
 }
 
-EQUATION_INFO modelInfoJsonGetEquation(MODEL_DATA_XML* xml, size_t ix)
+EQUATION_INFO modelInfoGetEquation(MODEL_DATA_XML* xml, size_t ix)
 {
   if (xml->equationInfo == NULL) {
-    modelInfoJsonInit(xml);
+    modelInfoInit(xml);
   }
   assert(xml->equationInfo);
   return xml->equationInfo[ix];
 }
 
-EQUATION_INFO modelInfoJsonGetEquationIndexByProfileBlock(MODEL_DATA_XML* xml, size_t ix)
+EQUATION_INFO modelInfoGetEquationIndexByProfileBlock(MODEL_DATA_XML* xml, size_t ix)
 {
   int i;
   if(xml->equationInfo == NULL)
   {
-    modelInfoJsonInit(xml);
+    modelInfoInit(xml);
   }
   if(ix > xml->nProfileBlocks)
   {
@@ -429,9 +429,4 @@ EQUATION_INFO modelInfoJsonGetEquationIndexByProfileBlock(MODEL_DATA_XML* xml, s
     }
   }
   throwStreamPrint(NULL, "Requested equation with profiler index %ld, but could not find it!", (long int)ix);
-}
-
-void freeModelInfoJson(MODEL_DATA_XML* xml)
-{
-  /* TODO: ... */
 }

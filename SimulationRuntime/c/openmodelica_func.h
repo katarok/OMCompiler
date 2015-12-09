@@ -140,6 +140,14 @@ const int useHomotopy;
  */
 int (*functionInitialEquations)(DATA *data, threadData_t*);
 
+/*! \fn functionInitialEquations_lambda0
+ *
+ * function for calculate initial values from the initial equations and initial algorithms
+ *
+ *  \param [ref] [data]
+ */
+int (*functionInitialEquations_lambda0)(DATA *data, threadData_t*);
+
 /*! \fn functionRemovedInitialEquations
  *
  * This function contains removed equations from the initialization problem,
@@ -271,7 +279,7 @@ int (*pickUpBoundsForInputsInOptimization)(DATA* data, modelica_real* min, model
 
 /*
  * This function is used only for optimization purpose
- * and set simulationInfo.inputVars. In case it's not present
+ * and set simulationInfo->inputVars. In case it's not present
  * a dummy function is added which return -1.
  */
 int (*setInputData)(DATA* data, const modelica_boolean file);
@@ -305,10 +313,17 @@ void (*function_updateSynchronous)(DATA *data, threadData_t *threadData, long i)
  * Sub-partition's equations
  */
 int (*function_equationsSynchronous)(DATA *data, threadData_t *threadData, long i);
+
+/*
+ * FMU's do not need the XML-file; they use this callback instead.
+ */
+void (*read_input_fmu)(MODEL_DATA* modelData, SIMULATION_INFO* simulationData);
+
 #ifdef FMU_EXPERIMENTAL
 /* functionODEPartial contains those equations that are needed
  * to calculate the state derivative i-th */
 void (*functionODEPartial)(DATA *data, threadData_t*, int i);
+void (*functionFMIJacobian)(DATA *data, threadData_t*, const unsigned *unknown, int nUnk, const unsigned *ders, int nKnown, double *dvKnown, double *out);
 #endif
 };
 

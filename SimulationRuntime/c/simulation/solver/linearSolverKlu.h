@@ -28,24 +28,41 @@
  *
  */
 
-#ifndef SIMULATION_INFO_XML_H
-#define SIMULATION_INFO_XML_H
+/*! \file linearSolverKlu.h
+ */
+
+#include "omc_config.h"
+
+#ifdef WITH_UMFPACK
+#ifndef _LINEARSOLVERKLU_H_
+#define _LINEARSOLVERKLU_H_
 
 #include "simulation_data.h"
+#include "suitesparse/Include/amd.h"
+#include "suitesparse/Include/klu.h"
 
-#ifdef __cplusplus
-extern "C" {
+typedef struct DATA_KLU
+{
+  int *Ap;
+  int *Ai;
+  double *Ax;
+  int n_col;
+  int n_row;
+  int nnz;
+  klu_symbolic *symbolic;
+  klu_numeric *numeric;
+  klu_common common;
+
+  double* work;
+
+  rtclock_t timeClock;             /* time clock */
+  int numberSolving;
+
+} DATA_KLU;
+
+int allocateKluData(int n_row, int n_col, int nz, void **data);
+int freeKluData(void **data);
+int solveKlu(DATA *data, threadData_t *threadData, int sysNumber);
+
 #endif
-
-extern FUNCTION_INFO (*modelInfoGetFunction)(MODEL_DATA_XML*,size_t);
-extern void (*modelInfoInit)(MODEL_DATA_XML*);
-extern EQUATION_INFO (*modelInfoGetEquation)(MODEL_DATA_XML*,size_t);
-extern EQUATION_INFO (*modelInfoGetEquationIndexByProfileBlock)(MODEL_DATA_XML*,size_t);
-extern void (*freeModelInfo)(MODEL_DATA_XML*);
-void setupModelInfoFunctions(int isJson);
-
-#ifdef __cplusplus
-}
-#endif
-
 #endif

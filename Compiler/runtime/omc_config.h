@@ -31,7 +31,13 @@
 #ifndef OPENMODELICA_CONFIG_H
 #define OPENMODELICA_CONFIG_H
 
-#if defined(__MINGW32__) || defined(_MSC_VER) /* Windows */
+#if defined(__MINGW32__) || defined(_MSC_VER)
+#define CONFIG_USER_IS_ROOT 0
+#else
+#define CONFIG_USER_IS_ROOT (geteuid() == 0 ? 1 : 0)
+#endif
+
+#if !defined(MSYS2_AUTOCONF) && (defined(__MINGW32__) || defined(_MSC_VER)) /* Windows */
 
 #define DEFAULT_CC "gcc"
 #define DEFAULT_CXX "g++"
@@ -44,7 +50,7 @@
 #define CONFIG_PLATFORM "WIN32"
 #define CONFIG_MODELICA_SPEC_PLATFORM "win32"
 #define CONFIG_OPENMODELICA_SPEC_PLATFORM "mingw32"
-#define CONFIG_USER_IS_ROOT 0
+
 #define CONFIG_WITH_OPENMP 1
 
 #define CONFIG_DEFAULT_OPENMODELICAHOME NULL
@@ -55,7 +61,7 @@
 #endif
 
 /* adrpo: add -loleaut32 as is used by ExternalMedia */
-#define BASIC_LDFLAGS_RT " -lomcgc -lexpat -lregex -static-libgcc -luuid -loleaut32 -lole32 -lws2_32 -llis -lumfpack -lamd -lsundials_kinsol -lsundials_nvecserial -lipopt -lcoinmumps -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -llapack-mingw -lcminpack -ltmglib-mingw -lblas-mingw -lf2c"
+#define BASIC_LDFLAGS_RT " -lomcgc -lexpat -lregex -static-libgcc -luuid -loleaut32 -lole32 -lws2_32 -llis -lumfpack -lklu -lcolamd -lbtf -lamd -lsundials_kinsol -lsundials_nvecserial -lipopt -lcoinmumps -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -llapack-mingw -lcminpack -ltmglib-mingw -lblas-mingw -lf2c"
 #define LDFLAGS_RT " -lOpenModelicaRuntimeC" BASIC_LDFLAGS_RT
 #define LDFLAGS_RT_SIM " -lSimulationRuntimeC" BASIC_LDFLAGS_RT " -lwsock32 -lstdc++"
 #define LDFLAGS_RT_SOURCE_FMU " -lregex -static-libgcc -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -llapack-mingw -ltmglib-mingw -lblas-mingw -lf2c"

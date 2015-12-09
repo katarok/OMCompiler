@@ -670,7 +670,7 @@ algorithm
              title,xLabel,yLabel,filename2,varNameStr,xml_filename,xml_contents,visvar_str,pwd,omhome,omlib,omcpath,os,
              platform,usercflags,senddata,res,workdir,gcc,confcmd,touch_file,uname,filenameprefix,compileDir,libDir,exeDir,configDir,from,to,
              gridStr, logXStr, logYStr, x1Str, x2Str, y1Str, y2Str, curveWidthStr, curveStyleStr, legendPosition, footer, autoScaleStr,scriptFile,logFile, simflags2, outputFile,
-             systemPath, gccVersion, gd, strlinearizeTime, direction, suffix;
+             systemPath, gccVersion, gd, strlinearizeTime, suffix;
       list<DAE.Exp> simOptions;
       list<Values.Value> vals;
       Absyn.Path path,classpath,className,baseClassPath;
@@ -701,7 +701,7 @@ algorithm
       Absyn.ComponentRef cr,cr_1;
       Integer size,resI,i,i1,i2,i3,n,curveStyle,numberOfIntervals, status;
       Option<Integer> fmiContext, fmiInstance, fmiModelVariablesInstance; /* void* implementation: DO NOT UNBOX THE POINTER AS THAT MIGHT CHANGE IT. Just treat this as an opaque type. */
-      Integer fmiLogLevel;
+      Integer fmiLogLevel, direction;
       list<Integer> is;
       list<FMI.TypeDefinitions> fmiTypeDefinitionsList;
       list<FMI.ModelVariables> fmiModelVariablesList;
@@ -823,7 +823,8 @@ algorithm
 
     case (cache,_,"getClassInformation",_,st,_)
       then (cache,Values.TUPLE({Values.STRING(""),Values.STRING(""),Values.BOOL(false),Values.BOOL(false),Values.BOOL(false),Values.STRING(""),
-                                Values.BOOL(false),Values.INTEGER(0),Values.INTEGER(0),Values.INTEGER(0),Values.INTEGER(0),Values.ARRAY({},{0})}),st);
+                                Values.BOOL(false),Values.INTEGER(0),Values.INTEGER(0),Values.INTEGER(0),Values.INTEGER(0),Values.ARRAY({},{0}),
+                                Values.BOOL(false),Values.BOOL(false)}),st);
 
     case (cache,_,"diffModelicaFileListings",{Values.STRING(s1),Values.STRING(s2),Values.ENUM_LITERAL(name=path)},(st as GlobalScript.SYMBOLTABLE(ast = p)),_)
       algorithm
@@ -928,35 +929,14 @@ algorithm
         (cache,ret_val,st_1);*/
 
     case (cache,env,"translateModelFMU", {Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(str1),Values.STRING(str2),Values.STRING(filenameprefix)},st,_)
-      equation
-        true = FMI.checkFMIVersion(str1);
-        true = FMI.checkFMIType(str2);
-        str = Absyn.pathString(className);
-        filenameprefix = if filenameprefix == "<default>" then str else filenameprefix;
-        filenameprefix = Util.stringReplaceChar(filenameprefix,".","_");
-        defaulSimOpt = buildSimulationOptionsFromModelExperimentAnnotation(st, className, filenameprefix, SOME(defaultSimulationOptions));
-        simSettings = convertSimulationOptionsToSimCode(defaulSimOpt);
-        (cache,ret_val,st_1) = translateModelFMU(cache, env, className, st, str1, str2, filenameprefix, true, SOME(simSettings));
-      then
-        (cache,ret_val,st_1);
+      algorithm
+        (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true);
+      then (cache,ret_val,st_1);
 
-    case (cache,_,"translateModelFMU", {Values.CODE(Absyn.C_TYPENAME(_)),Values.STRING(str1),Values.STRING(_),Values.STRING(_)},st,_)
-      equation
-        false = FMI.checkFMIVersion(str1);
-        Error.addMessage(Error.UNKNOWN_FMU_VERSION, {str1});
-      then
-        (cache,Values.STRING(""),st);
-
-    case (cache,_,"translateModelFMU", {Values.CODE(Absyn.C_TYPENAME(_)),Values.STRING(_),Values.STRING(str1),Values.STRING(_)},st,_)
-      equation
-        false = FMI.checkFMIType(str1);
-        Error.addMessage(Error.UNKNOWN_FMU_TYPE, {str1});
-      then
-        (cache,Values.STRING(""),st);
-
-    case (cache,_,"translateModelFMU", {Values.CODE(Absyn.C_TYPENAME(_)),Values.STRING(_),Values.STRING(_)},st,_)
-      then
-        (cache,Values.STRING(""),st);
+    case (cache,env,"buildModelFMU", {Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(str1),Values.STRING(str2),Values.STRING(filenameprefix),Values.ARRAY(valueLst=cvars)},st,_)
+      algorithm
+        (cache,ret_val,st_1) := buildModelFMU(cache, env, className, st, str1, str2, filenameprefix, true, list(ValuesUtil.extractValueString(vv) for vv in cvars));
+      then (cache,ret_val,st_1);
 
     case (cache,env,"translateModelXML",{Values.CODE(Absyn.C_TYPENAME(className)),Values.STRING(filenameprefix)},st,_)
       equation
@@ -1135,42 +1115,36 @@ algorithm
       then
         (cache,simValue,st);
 
-    // adrpo: see if the model exists before moving!
-    case (cache,_,"moveClass",{Values.CODE(Absyn.C_TYPENAME(className)),
-                                         Values.STRING(_)},
-          st as GlobalScript.SYMBOLTABLE(ast = p),_)
-      equation
-        crefCName = Absyn.pathToCref(className);
-        false = Interactive.existClass(crefCName, p);
-        simValue = Values.BOOL(false);
+    case (_, _, "moveClass", {Values.CODE(Absyn.C_TYPENAME(className)),
+                                  Values.INTEGER(direction)},
+        st as GlobalScript.SYMBOLTABLE(), _)
+      algorithm
+        (p, b) := moveClass(className, direction, st.ast);
+        st.ast := p;
       then
-        (cache,simValue,st);
+        (inCache, Values.BOOL(b), st);
 
-    // everything should work fine here
-    case (cache,_,"moveClass",{Values.CODE(Absyn.C_TYPENAME(className)),
-                                        Values.STRING(direction)},
-          st as GlobalScript.SYMBOLTABLE(ast = p),_)
-      equation
-        crefCName = Absyn.pathToCref(className);
-        true = Interactive.existClass(crefCName, p);
-        p = moveClass(className, direction, p);
-        st = GlobalScriptUtil.setSymbolTableAST(st, p);
-        simValue = Values.BOOL(true);
-      then
-        (cache,simValue,st);
+    case (_, _, "moveClass", _, _, _) then (inCache, Values.BOOL(false), inSt);
 
-    // adrpo: some error happened!
-    case (cache,_,"moveClass",{Values.CODE(Absyn.C_TYPENAME(className)),
-                                        Values.STRING(_)},
-          st as GlobalScript.SYMBOLTABLE(ast = p),_)
-      equation
-        crefCName = Absyn.pathToCref(className);
-        true = Interactive.existClass(crefCName, p);
-        errMsg = "moveClass Error: Could not move the model " + Absyn.pathString(className) + ". Unknown error.";
-        Error.addMessage(Error.INTERNAL_ERROR, {errMsg});
-        simValue = Values.BOOL(false);
+    case (_, _, "moveClassToTop", {Values.CODE(Absyn.C_TYPENAME(className))},
+        st as GlobalScript.SYMBOLTABLE(), _)
+      algorithm
+        (p, b) := moveClassToTop(className, st.ast);
+        st.ast := p;
       then
-        (cache,simValue,st);
+        (inCache, Values.BOOL(b), st);
+
+    case (_, _, "moveClassToTop", _, _, _) then (inCache, Values.BOOL(false), inSt);
+
+    case (_, _, "moveClassToBottom", {Values.CODE(Absyn.C_TYPENAME(className))},
+        st as GlobalScript.SYMBOLTABLE(), _)
+      algorithm
+        (p, b) := moveClassToBottom(className, st.ast);
+        st.ast := p;
+      then
+        (inCache, Values.BOOL(b), st);
+
+    case (_, _, "moveClassToBottom", _, _, _) then (inCache, Values.BOOL(false), inSt);
 
     case (cache,_,"copyClass",{Values.CODE(Absyn.C_TYPENAME(classpath)), Values.STRING(name), Values.CODE(Absyn.C_TYPENAME(Absyn.IDENT("TopLevel")))},
           st as GlobalScript.SYMBOLTABLE(ast = p),_)
@@ -1584,7 +1558,7 @@ algorithm
         absynClass = Interactive.getPathedClassInProgram(classpath, p);
         (sp, st) = GlobalScriptUtil.symbolTableToSCode(st);
         (cache, env) = Inst.makeEnvFromProgram(FCore.emptyCache(), sp, Absyn.IDENT(""));
-        (cache,(cl as SCode.CLASS(name=name,encapsulatedPrefix=encflag,restriction=restr)),env) = Lookup.lookupClass(cache, env, classpath, false);
+        (cache,(cl as SCode.CLASS(name=name,encapsulatedPrefix=encflag,restriction=restr)),env) = Lookup.lookupClass(cache, env, classpath, NONE());
         env = FGraph.openScope(env, encflag, SOME(name), FGraph.restrictionToScopeType(restr));
         (_, env) = Inst.partialInstClassIn(cache, env, InnerOuter.emptyInstHierarchy, DAE.NOMOD(), Prefix.NOPRE(),
           ClassInf.start(restr, FGraph.getGraphName(env)), cl, SCode.PUBLIC(), {}, 0);
@@ -1974,6 +1948,22 @@ algorithm
       then
         (cache,v,st);
 
+    case (cache,_,"removeComponentModifiers",{Values.CODE(Absyn.C_TYPENAME(path)),Values.STRING(str1)},(st as GlobalScript.SYMBOLTABLE(ast = p)),_)
+      equation
+        (p,b) = Interactive.removeComponentModifiers(path, str1, p);
+        st = GlobalScriptUtil.setSymbolTableAST(st, p);
+      then
+        (cache,Values.BOOL(b),st);
+
+    case (cache,_,"removeExtendsModifiers",
+          {Values.CODE(Absyn.C_TYPENAME(classpath)),
+           Values.CODE(Absyn.C_TYPENAME(baseClassPath))},st as GlobalScript.SYMBOLTABLE(ast=p),_)
+      equation
+        (p,b) = Interactive.removeExtendsModifiers(classpath, baseClassPath, p);
+        st = GlobalScriptUtil.setSymbolTableAST(st, p);
+      then
+        (cache,Values.BOOL(b),st);
+
     case (cache,_,"getAlgorithmCount",{Values.CODE(Absyn.C_TYPENAME(path))},(st as GlobalScript.SYMBOLTABLE(ast = p)),_)
       equation
         absynClass = Interactive.getPathedClassInProgram(path, p);
@@ -2352,6 +2342,7 @@ algorithm
   if Flags.isSet(Flags.GC_PROF) then
     print(GC.profStatsStr(GC.getProfStats(), head="GC stats after front-end:") + "\n");
   end if;
+
 end runFrontEnd;
 
 protected function runFrontEndLoadProgram
@@ -2375,7 +2366,7 @@ algorithm
       Boolean b;
     case (_, GlobalScript.SYMBOLTABLE(ast=p))
       equation
-        _ = Interactive.getPathedClassInProgram(className, p);
+        _ = Interactive.getPathedClassInProgram(className, p, true);
       then inSt;
     case (_, GlobalScript.SYMBOLTABLE(p,fp,ic,iv,cf,lf))
       equation
@@ -2420,7 +2411,7 @@ algorithm
 
         System.realtimeTick(ClockIndexes.RT_CLOCK_FINST);
         str = Absyn.pathString(className);
-        (absynClass as Absyn.CLASS(restriction = restriction)) = Interactive.getPathedClassInProgram(className, p);
+        (absynClass as Absyn.CLASS(restriction = restriction)) = Interactive.getPathedClassInProgram(className, p, true);
         re = Absyn.restrString(restriction);
         Error.assertionOrAddSourceMessage(relaxedFrontEnd or not (Absyn.isFunctionRestriction(restriction) or Absyn.isPackageRestriction(restriction)),
           Error.INST_INVALID_RESTRICTION,{str,re},Absyn.dummyInfo);
@@ -2469,7 +2460,7 @@ algorithm
         false = Flags.isSet(Flags.GRAPH_INST);
         false = Flags.isSet(Flags.SCODE_INST);
         str = Absyn.pathString(className);
-        (absynClass as Absyn.CLASS(restriction = restriction)) = Interactive.getPathedClassInProgram(className, p);
+        (absynClass as Absyn.CLASS(restriction = restriction)) = Interactive.getPathedClassInProgram(className, p, true);
         re = Absyn.restrString(restriction);
         Error.assertionOrAddSourceMessage(relaxedFrontEnd or not (Absyn.isFunctionRestriction(restriction) or Absyn.isPackageRestriction(restriction)),
           Error.INST_INVALID_RESTRICTION,{str,re},Absyn.dummyInfo);
@@ -2594,73 +2585,91 @@ algorithm
   end match;
 end translateModelCPP;*/
 
-protected function translateModelFMU " author: Frenkel TUD
+protected function buildModelFMU " author: Frenkel TUD
  translates a model into cpp code and writes also a makefile"
   input FCore.Cache inCache;
   input FCore.Graph inEnv;
   input Absyn.Path className "path for the model";
   input GlobalScript.SymbolTable inInteractiveSymbolTable;
-  input String inFMUVersion;
-  input String inFMUType;
+  input String FMUVersion;
+  input String FMUType;
   input String inFileNamePrefix;
   input Boolean addDummy "if true, add a dummy state";
-  input Option<SimCode.SimulationSettings> inSimSettingsOpt;
-  output FCore.Cache outCache;
+  input list<String> platforms = {"dynamic"};
+  output FCore.Cache cache;
   output Values.Value outValue;
-  output GlobalScript.SymbolTable outInteractiveSymbolTable;
+  output GlobalScript.SymbolTable st;
 protected
   Boolean staticSourceCodeFMU;
+  String filenameprefix, quote, fmutmp, thisplatform, cmd, logfile;
+  GlobalScript.SimulationOptions defaulSimOpt;
+  SimCode.SimulationSettings simSettings;
+  list<String> libs;
+  Boolean isWindows;
 algorithm
-  staticSourceCodeFMU := Flags.isSet(Flags.BUILD_STATIC_SOURCE_FMU);
-  (outCache,outValue,outInteractiveSymbolTable):=
-  match (inCache,inEnv,className,inInteractiveSymbolTable,inFMUVersion,inFMUType,inFileNamePrefix,addDummy,inSimSettingsOpt)
-    local
-      FCore.Cache cache;
-      FCore.Graph env;
-      BackendDAE.BackendDAE indexed_dlow;
-      GlobalScript.SymbolTable st;
-      list<String> libs;
-      Values.Value outValMsg;
-      String file_dir, FMUVersion, FMUType, fileNamePrefix, str, fmutmp, quote;
-      Boolean isWindows = System.os() == "Windows_NT";
-    case (cache,env,_,st,FMUVersion,FMUType,fileNamePrefix,_,_) /* mo file directory */
-      equation
-        (cache, outValMsg, st,_, libs,_, _) =
-          SimCodeMain.translateModelFMU(cache,env,className,st,FMUVersion,FMUType,fileNamePrefix,addDummy,inSimSettingsOpt);
+  st := inInteractiveSymbolTable;
+  cache := inCache;
+  if not FMI.checkFMIVersion(FMUVersion) then
+    outValue := Values.STRING("");
+    Error.addMessage(Error.UNKNOWN_FMU_VERSION, {FMUVersion});
+    return;
+  elseif not FMI.checkFMIType(FMUType) then
+    outValue := Values.STRING("");
+    Error.addMessage(Error.UNKNOWN_FMU_TYPE, {FMUType});
+    return;
+  end if;
+  filenameprefix := Util.stringReplaceChar(if inFileNamePrefix == "<default>" then Absyn.pathString(className) else inFileNamePrefix,".","_");
+  defaulSimOpt := buildSimulationOptionsFromModelExperimentAnnotation(st, className, filenameprefix, SOME(defaultSimulationOptions));
+  simSettings := convertSimulationOptionsToSimCode(defaulSimOpt);
+  try
+    (cache, outValue, st,_, libs,_, _) := SimCodeMain.translateModelFMU(cache, inEnv, className, st, FMUVersion, FMUType, filenameprefix, addDummy, simSettings);
+  else
+    outValue := Values.STRING("");
+    return;
+  end try;
+  isWindows := System.os() == "Windows_NT";
+  // compile
+  quote := if isWindows then "" else "'";
+  CevalScript.compileModel(filenameprefix+"_FMU" , libs);
+  if Config.simCodeTarget() == "Cpp" then
+    // Cpp FMUs are not source-code FMUs
+    return;
+  end if;
 
-        // compile
-        quote = if isWindows then "" else "'";
-        CevalScript.compileModel(fileNamePrefix+"_FMU" , libs);
-        if Config.simCodeTarget() <> "Cpp" then
-          fmutmp = fileNamePrefix + ".fmutmp";
-          /* Let's just assume we have a pristine source directory in fmutmp
-          if System.directoryExists(fmutmp) then
-            System.removeDirectory(fmutmp);
-          end if;
-          unzip(...);
-          */
-          // CevalScript.compileModel(fileNamePrefix , libs, workingDir=fmutmp+"/sources", makeVars={"CC=arm-linux-gnueabi-gcc","FMIPLATFORM=arm-linux-gnueabi","DLLEXT=.so"});
-          CevalScript.compileModel(fileNamePrefix , libs, workingDir=fmutmp+"/sources", makeVars={
-              "CC="+System.getCCompiler(),
-              "CFLAGS="+quote+System.getCFlags()+quote,
-              "CPPFLAGS=",
-              "LDFLAGS="+quote+System.getLDFlags()+" "+(if staticSourceCodeFMU then System.getRTLibsFMU() /*TODO: Should not be needed, once we remove the need for lapack/expat*/ else System.getRTLibsSim()) + quote,
-              "FMIPLATFORM="+System.modelicaPlatform(),
-              "DLLEXT="+System.getDllExt(),
-              "LD="+quote+System.getLinker()+quote,
-              if staticSourceCodeFMU then "OPENMODELICA_DYNAMIC=" else "OPENMODELICA_DYNAMIC=1"
-          });
-          // CevalScript.compileModel(fileNamePrefix , libs, workingDir=fmutmp+"/sources", makeVars={});
-          System.removeDirectory(fmutmp);
-        end if;
-      then (cache,outValMsg,st);
-    else /* mo file directory */
-      equation
-         str = Error.printMessagesStr(false);
-      then
-        (inCache,ValuesUtil.makeArray({Values.STRING("translateModelFMU error."),Values.STRING(str)}),inInteractiveSymbolTable);
-  end match;
-end translateModelFMU;
+  fmutmp := filenameprefix + ".fmutmp";
+  logfile := filenameprefix+".log";
+
+  thisplatform := " CC="+quote+System.getCCompiler()+quote+
+      " CFLAGS="+quote+System.stringReplace(System.getCFlags(),"${MODELICAUSERCFLAGS}","")+quote+
+      " LDFLAGS="+quote+("-L'"+Settings.getInstallationDirectoryPath()+"/lib/"+System.getTriple()+"/omc' "+
+                         "-Wl,-rpath,'"+Settings.getInstallationDirectoryPath()+"/lib/"+System.getTriple()+"/omc' "+
+                         System.getLDFlags()+" ");
+
+  for platform in platforms loop
+    cmd := "cd \"" +  fmutmp+"/sources\" && ./configure "+
+      (if platform == "dynamic" then
+        " --with-dynamic-om-runtime"+thisplatform+System.getRTLibsSim()+quote
+      elseif platform == "static" then
+        thisplatform+quote
+      else
+        (
+        " --host="+quote+platform+quote+
+        " CFLAGS="+quote+"-Os -flto"+quote+" LDFLAGS=-flto"
+        )
+      ) + " && make clean";
+    if System.regularFileExists(logfile) then
+      System.removeFile(logfile);
+    end if;
+    if 0 <> System.systemCall(cmd, outFile=logfile) then
+      outValue := Values.STRING("");
+      Error.addMessage(Error.SIMULATOR_BUILD_ERROR, {System.readFile(logfile)});
+      return;
+    end if;
+    CevalScript.compileModel(filenameprefix , libs, workingDir=fmutmp+"/sources", makeVars={});
+  end for;
+
+  System.removeDirectory(fmutmp);
+end buildModelFMU;
 
 
 protected function translateModelXML " author: Alachew
@@ -2851,49 +2860,737 @@ algorithm
 end getListNthShowError;
 
 protected function moveClass
+  "Moves the referenced class by a certain offset in the given program, relative
+   to other classes."
   input Absyn.Path inClassName;
-  input String inDirection;
-  input Absyn.Program inProg;
-  output Absyn.Program outProg;
+  input Integer inOffset;
+  input Absyn.Program inProgram;
+  output Absyn.Program outProgram;
+  output Boolean outSuccess;
+protected
+  Absyn.Path parent_cls;
+  String cls_name;
 algorithm
-  outProg := match(inClassName, inDirection, inProg)
-    local
-      Absyn.Path c, parent;
-      Absyn.Program p;
-      list<Absyn.Class>  cls;
-      Absyn.Within       w;
-      String name;
-      Absyn.Class parentparentClass;
+  // No offset, nothing to do.
+  if inOffset == 0 then
+    outProgram := inProgram;
+    outSuccess := true;
+    return;
+  end if;
 
-    case (Absyn.FULLYQUALIFIED(c), _, _)
-      equation
-        p = moveClass(c, inDirection, inProg);
-      then
-        p;
+  try
+    if Absyn.pathIsIdent(inClassName) then
+      // Simple identifier, move a top-level class in the program.
+      outProgram := moveClassInProgram(Absyn.pathFirstIdent(inClassName), inOffset, inProgram);
+    else
+      // Qualified identifier, move the class inside its parent.
+      (parent_cls, Absyn.IDENT(cls_name)) := Absyn.splitQualAndIdentPath(inClassName);
+      outProgram := Interactive.transformPathedClassInProgram(parent_cls, inProgram,
+         function moveClassInClass(inName = cls_name, inOffset = inOffset));
+    end if;
 
-    case (Absyn.IDENT(name), _, p as Absyn.PROGRAM())
-      equation
-        p.classes = moveClassInList(name, p.classes, inDirection);
-      then p;
-
-    case (Absyn.QUALIFIED(_, _), _, p)
-      equation
-        parent = Absyn.stripLast(inClassName);
-        _ = Interactive.getPathedClassInProgram(parent, p);
-      then
-        p;
-
-  end match;
+    outSuccess := true;
+  else
+    outProgram := inProgram;
+    outSuccess := false;
+  end try;
 end moveClass;
 
-protected function moveClassInList
-  input String inClassName;
-  input list<Absyn.Class> inCls;
-  input String inDirection;
-  output list<Absyn.Class> outCls;
+protected function moveClassToTop
+  "Moves a named class to the top of its enclosing class."
+  input Absyn.Path inClassName;
+  input Absyn.Program inProgram;
+  output Absyn.Program outProgram = inProgram;
+  output Boolean outSuccess;
+protected
+  Absyn.Path parent_cls;
+  String cls_name;
 algorithm
-  outCls := inCls;
-end moveClassInList;
+  try
+    if Absyn.pathIsIdent(inClassName) then
+      outProgram := match outProgram
+        local
+          list<Absyn.Class> classes;
+          Absyn.Class cls;
+
+        case Absyn.PROGRAM()
+          algorithm
+            (classes, SOME(cls)) :=
+              List.deleteMemberOnTrue(Absyn.pathFirstIdent(inClassName),
+                outProgram.classes, Absyn.isClassNamed);
+            outProgram.classes := cls :: classes;
+          then
+            outProgram;
+      end match;
+    else
+      (parent_cls, Absyn.IDENT(cls_name)) := Absyn.splitQualAndIdentPath(inClassName);
+      outProgram := Interactive.transformPathedClassInProgram(parent_cls, inProgram,
+        function moveClassToTopInClass(inName = cls_name));
+    end if;
+
+    outSuccess := true;
+  else
+    outSuccess := false;
+  end try;
+end moveClassToTop;
+
+protected function moveClassToBottom
+  "Moves a named class to the bottom of its enclosing class."
+  input Absyn.Path inClassName;
+  input Absyn.Program inProgram;
+  output Absyn.Program outProgram = inProgram;
+  output Boolean outSuccess;
+protected
+  Absyn.Path parent_cls;
+  String cls_name;
+algorithm
+  try
+    if Absyn.pathIsIdent(inClassName) then
+      outProgram := match outProgram
+        local
+          list<Absyn.Class> classes;
+          Absyn.Class cls;
+
+        case Absyn.PROGRAM()
+          algorithm
+            (classes, SOME(cls)) :=
+              List.deleteMemberOnTrue(Absyn.pathFirstIdent(inClassName),
+                outProgram.classes, Absyn.isClassNamed);
+            outProgram.classes := listAppend(classes, {cls});
+          then
+            outProgram;
+      end match;
+    else
+      (parent_cls, Absyn.IDENT(cls_name)) := Absyn.splitQualAndIdentPath(inClassName);
+      outProgram := Interactive.transformPathedClassInProgram(parent_cls, inProgram,
+        function moveClassToBottomInClass(inName = cls_name));
+    end if;
+
+    outSuccess := true;
+  else
+    outSuccess := false;
+  end try;
+end moveClassToBottom;
+
+protected function moveClassInProgram
+  "Moves a named class a certain offset within a program."
+  input String inName;
+  input Integer inOffset;
+  input Absyn.Program inProgram;
+  output Absyn.Program outProgram = inProgram;
+algorithm
+  outProgram := match outProgram
+    case Absyn.PROGRAM()
+      algorithm
+        outProgram.classes := moveClassInClassList(inName, inOffset, outProgram.classes);
+      then
+        outProgram;
+  end match;
+end moveClassInProgram;
+
+protected function moveClassInClassList
+  "Moves a named class a certain offset within a list of classes. Fails if no
+   class with the given name could be found."
+  input String inName;
+  input Integer inOffset;
+  input list<Absyn.Class> inClasses;
+  output list<Absyn.Class> outClasses;
+protected
+  Absyn.Class cls;
+  list<Absyn.Class> acc = {}, rest = inClasses;
+  String name;
+  Integer offset;
+algorithm
+  // Move classes from rest to acc until we find the class.
+  // This will intentionally fail if the class isn't found.
+  while true loop
+    (cls as Absyn.CLASS(name = name)) :: rest := rest;
+
+    if name == inName then
+      break;
+    else
+      acc := cls :: acc;
+    end if;
+  end while;
+
+  if inOffset > 0 then
+    // Clamp offset so we don't move outside the list.
+    offset := min(inOffset, listLength(rest));
+
+    // Move 'offset' number of classes from rest to acc.
+    for i in 1:offset loop
+      acc := listHead(rest) :: acc;
+      rest := listRest(rest);
+    end for;
+  else
+    // Clamp offset so we don't move outside the list.
+    offset := max(inOffset, -listLength(acc));
+
+    // Move 'offset' number of classes from acc to rest.
+    for i in offset:-1 loop
+      rest := listHead(acc) :: rest;
+      acc := listRest(acc);
+    end for;
+  end if;
+
+  // Assemble the class list again with the class in the correct position.
+  outClasses := listAppend(listReverse(acc), cls :: rest);
+end moveClassInClassList;
+
+protected function moveClassInClass
+  "Moves a named class a certain offset within another class. Only handles long
+  class and class extends definitions, since there's no meaningful way of moving
+  a class inside e.g. a short class definition. Fails if the class can't be
+  found. An out of bounds offset is clamped."
+  input String inName;
+  input Integer inOffset;
+  input Absyn.Class inClass;
+  output Absyn.Class outClass;
+protected
+  Absyn.ClassDef body;
+algorithm
+  Absyn.CLASS(body = body) := inClass;
+
+  body := match body
+    case Absyn.PARTS()
+      algorithm
+        body.classParts := moveClassInClassParts(inName, inOffset, body.classParts);
+      then
+        body;
+
+    case Absyn.CLASS_EXTENDS()
+      algorithm
+        body.parts := moveClassInClassParts(inName, inOffset, body.parts);
+      then
+        body;
+
+  end match;
+
+  outClass := Absyn.setClassBody(inClass, body);
+end moveClassInClass;
+
+protected function moveClassInClassParts
+  input String inName;
+  input Integer inOffset;
+  input list<Absyn.ClassPart> inClassParts;
+  output list<Absyn.ClassPart> outClassParts = inClassParts;
+protected
+  Absyn.ClassPart part;
+  list<Absyn.ClassPart> acc = {}, rest = inClassParts, parts;
+  Option<Absyn.ElementItem> cls = NONE();
+  Integer offset;
+  Boolean is_public, is_empty;
+algorithm
+  // Go through the parts until we find the one containing the named class.
+  while true loop
+    part :: rest := rest;
+    (part, cls, offset, is_public) := moveClassInClassPart(inName, inOffset, part);
+
+    if isSome(cls) then
+      break;
+    else
+      acc := part :: acc;
+    end if;
+  end while;
+
+  is_empty := Absyn.isEmptyClassPart(part);
+  // Operate on either rest or acc depending on offset direction.
+  parts := if offset > 0 then rest else acc;
+
+  if listEmpty(parts) and offset <> 0 then
+    // No parts left but offset isn't 0, insert the class at the end.
+    parts := moveClassInClassParts3(Util.getOption(cls), offset < 0, is_public, part, parts);
+  else
+    // Otherwise, keeps moving the class until it's in the correct part.
+    parts := moveClassInClassParts2(Util.getOption(cls), offset, is_public, parts);
+
+    if not is_empty then
+      // Only add the part we moved the class from if it contains something.
+      parts := part :: parts;
+    end if;
+  end if;
+
+  if offset > 0 then
+    rest := parts;
+  else
+    acc := parts;
+  end if;
+
+  // If the part we moved the class from is empty, try to merge the surrounding
+  // parts so that repeated moving don't fragment the class.
+  if is_empty and not listEmpty(rest) then
+    part :: rest := rest;
+    acc := mergeClassPartWithList(part, acc);
+  end if;
+
+  outClassParts := listAppend(listReverse(acc), rest);
+end moveClassInClassParts;
+
+protected function mergeClassPartWithList
+  "Tries to merge the given class part with the first part in the list. If they
+   are not the same type it just adds the part to the head of the list instead."
+  input Absyn.ClassPart inClassPart;
+  input list<Absyn.ClassPart> inClassParts;
+  output list<Absyn.ClassPart> outClassParts;
+protected
+  Absyn.ClassPart part;
+  list<Absyn.ClassPart> rest;
+algorithm
+  outClassParts := match (inClassPart, inClassParts)
+    case (Absyn.PUBLIC(), (part as Absyn.PUBLIC()) :: rest)
+      then Absyn.PUBLIC(listAppend(part.contents, inClassPart.contents)) :: rest;
+    case (Absyn.PROTECTED(), (part as Absyn.PROTECTED()) :: rest)
+      then Absyn.PROTECTED(listAppend(part.contents, inClassPart.contents)) :: rest;
+    else inClassPart :: inClassParts;
+  end match;
+end mergeClassPartWithList;
+
+protected function moveClassInClassParts2
+  "Helper function to moveClassInClassParts. Inserts the class into the correct
+   class part."
+  input Absyn.ElementItem inClass;
+  input Integer inOffset;
+  input Boolean inIsPublic;
+  input list<Absyn.ClassPart> inClassParts;
+  output list<Absyn.ClassPart> outClassParts;
+protected
+  Absyn.ClassPart part;
+  list<Absyn.ClassPart> rest = inClassParts, parts, acc = {};
+  Integer offset = inOffset;
+  Boolean moved;
+algorithm
+  // Loop while we still have some offset to move the class.
+  while offset <> 0 loop
+    part :: rest := rest;
+    // Move the class through the next part.
+    (parts, offset, moved) := moveClassInClassPart3(inClass, offset, inIsPublic, part);
+
+    if listEmpty(rest) and not moved then
+      // We ran out of class parts, add the class at the end.
+      acc := moveClassInClassParts3(inClass, inOffset > 0, inIsPublic, part, acc);
+      break;
+    elseif offset == 0 and not moved then
+      // The offset is zero, but the class still hasn't been inserted anywhere.
+      // This happens when the class was just moved outside the current part,
+      // and should be inserted into the next one.
+      // Add the parts we've just processed.
+      acc := listAppend(parts, acc);
+      // Add the class to the next part if it has the same protection, otherwise
+      // create a new part for it.
+      part :: rest := rest;
+      acc := moveClassInClassParts3(inClass, inOffset > 0, inIsPublic, part, acc);
+      break;
+    end if;
+
+    acc := listAppend(if inOffset > 0 then parts else listReverse(parts), acc);
+  end while;
+
+  outClassParts := listAppend(listReverse(acc), rest);
+end moveClassInClassParts2;
+
+protected function moveClassInClassParts3
+  "Helper function to moveClassInClassParts2. Inserts a class into a given class
+   part if they have the same protection, or create a new part for the class
+   otherwise. Then the part(s) are added to the given list of parts."
+  input Absyn.ElementItem inClass;
+  input Boolean inPositiveOffset;
+  input Boolean inIsPublic;
+  input Absyn.ClassPart inClassPart;
+  input list<Absyn.ClassPart> inClassParts;
+  output list<Absyn.ClassPart> outClassParts;
+algorithm
+  outClassParts := match (inPositiveOffset, inIsPublic, inClassPart)
+    case (true,  true,  Absyn.PUBLIC())
+      then Absyn.PUBLIC(inClass :: inClassPart.contents) :: inClassParts;
+    case (true,  false, Absyn.PROTECTED())
+      then Absyn.PROTECTED(inClass :: inClassPart.contents) :: inClassParts;
+    case (false, true,  Absyn.PUBLIC())
+      then Absyn.PUBLIC(listAppend(inClassPart.contents, {inClass})) :: inClassParts;
+    case (false, false, Absyn.PROTECTED())
+      then Absyn.PROTECTED(listAppend(inClassPart.contents, {inClass})) :: inClassParts;
+    case (_,  true,  _)
+      then Absyn.PUBLIC({inClass}) :: inClassPart :: inClassParts;
+    case (_,  false, _)
+      then Absyn.PROTECTED({inClass}) :: inClassPart :: inClassParts;
+  end match;
+end moveClassInClassParts3;
+
+protected function moveClassInClassPart
+  "Moves a named class a certain offset within a single class part."
+  input String inName;
+  input Integer inOffset;
+  input Absyn.ClassPart inClassPart;
+  output Absyn.ClassPart outClassPart = inClassPart;
+  output Option<Absyn.ElementItem> outClass;
+  output Integer outRemainingOffset;
+  output Boolean outIsPublic;
+protected
+  list<Absyn.ElementItem> elements;
+algorithm
+  (outClassPart, outClass, outRemainingOffset, outIsPublic) := match outClassPart
+    case Absyn.PUBLIC()
+      algorithm
+        (elements, outClass, outRemainingOffset) :=
+          moveClassInClassPart2(inName, inOffset, outClassPart.contents);
+        outClassPart.contents := elements;
+      then
+        (outClassPart, outClass, outRemainingOffset, true);
+
+    case Absyn.PROTECTED()
+      algorithm
+        (elements, outClass, outRemainingOffset) :=
+          moveClassInClassPart2(inName, inOffset, outClassPart.contents);
+        outClassPart.contents := elements;
+      then
+        (outClassPart, outClass, outRemainingOffset, false);
+
+    else (outClassPart, NONE(), inOffset, false);
+  end match;
+end moveClassInClassPart;
+
+protected function moveClassInClassPart2
+  "Helper function to moveClassInClassPart. Moves a named class a certain offset
+   within a list of element items."
+  input String inName;
+  input Integer inOffset;
+  input list<Absyn.ElementItem> inElements;
+  output list<Absyn.ElementItem> outElements;
+  output Option<Absyn.ElementItem> outClass = NONE();
+  output Integer outRemainingOffset;
+protected
+  Absyn.ElementItem e;
+  list<Absyn.ElementItem> elements = inElements, acc = {};
+algorithm
+  // Try to find an element item containing the class we're looking for.
+  while not listEmpty(elements) loop
+    e :: elements := elements;
+
+    if Absyn.isElementItemClassNamed(inName, e) then
+      // Found the class, exit the loop.
+      outClass := SOME(e);
+      break;
+    else
+      acc := e :: acc;
+    end if;
+  end while;
+
+  // No class found.
+  if isNone(outClass) then
+    outElements := inElements;
+    outRemainingOffset := inOffset;
+    return;
+  end if;
+
+  // Try to move the class within the elements we have.
+  (acc, elements, outRemainingOffset) :=
+    moveClassInSplitClassPart(inOffset, acc, elements);
+
+  // Insert the class again if it was moved within this class part. Otherwise it needs
+  // to be moved into another class part, which is handled by moveClassInClassParts.
+  if outRemainingOffset == 0 then
+    elements := e :: elements;
+  end if;
+
+  outElements := listAppend(listReverse(acc), elements);
+end moveClassInClassPart2;
+
+protected function makeClassPart
+  input list<Absyn.ElementItem> inElements;
+  input Boolean inPublic;
+  output Absyn.ClassPart outPart =
+    if inPublic then Absyn.PUBLIC(inElements) else Absyn.PROTECTED(inElements);
+end makeClassPart;
+
+protected function moveClassInClassPart3
+  "Helper function to moveClassInClassParts2. Moves a class a certain offset in
+   a given class part."
+  input Absyn.ElementItem inClass;
+  input Integer inOffset;
+  input Boolean inIsPublic;
+  input Absyn.ClassPart inClassPart;
+  output list<Absyn.ClassPart> outClassParts;
+  output Integer outRemainingOffset;
+  output Boolean outMoved = false;
+protected
+  Boolean same_part_type, reached_end;
+  list<Absyn.ElementItem> elems_before, elems_after, elems;
+algorithm
+  // Fetch the elements of the part, and remember if it has the same protection
+  // as the class to be moved.
+  (elems, same_part_type) := match inClassPart
+    case Absyn.PUBLIC() then (inClassPart.contents, inIsPublic);
+    case Absyn.PROTECTED() then (inClassPart.contents, not inIsPublic);
+  end match;
+
+  // Use moveClassInSplitClassPart to shuffle elements.
+  if inOffset > 0 then
+    elems_before := {};
+    elems_after := elems;
+  else
+    elems_before := elems;
+    elems_after := {};
+  end if;
+
+  (elems_before, elems_after, outRemainingOffset, reached_end) :=
+    moveClassInSplitClassPart(inOffset, listReverse(elems_before), elems_after);
+
+  // No remaining offset, the class has been moved to where it should be.
+  if outRemainingOffset == 0 then
+    if same_part_type then
+      // The class and the class part has the same protection, insert the class
+      // into the part.
+      elems := listAppend(listReverse(elems_before), inClass :: elems_after);
+      outClassParts := {makeClassPart(elems, inIsPublic)};
+      outMoved := true;
+    elseif not reached_end then
+      // If we did not reach the end, and the protection isn't the same, split
+      // the class part into three potential parts, with the class in its own
+      // part in the middle.
+      outClassParts := if listEmpty(elems_before) then {} else
+        {makeClassPart(listReverse(elems_before), not inIsPublic)};
+      outClassParts := makeClassPart({inClass}, inIsPublic) :: outClassParts;
+      if not listEmpty(elems_after) then
+        outClassParts := makeClassPart(elems_after, not inIsPublic) :: outClassParts;
+      end if;
+      outMoved := true;
+    else
+      // Different protection, and we did reach the end. In that case the class
+      // should be moved into the next part, if that part has the same
+      // protection. We don't know that here, so we return the class part as it
+      // is and let moveClassInClassParts2 sort it out.
+      outClassParts := {inClassPart};
+    end if;
+  else
+    outClassParts := {inClassPart};
+  end if;
+end moveClassInClassPart3;
+
+protected function moveClassInSplitClassPart
+  "Takes two lists of element items and an offset. Moves elements from one list
+   to the other until offset number of classes has been moved or the end in
+   either direction has been reached."
+  input Integer inOffset;
+  input list<Absyn.ElementItem> inElementsBefore;
+  input list<Absyn.ElementItem> inElementsAfter;
+  output list<Absyn.ElementItem> outElementsBefore = inElementsBefore;
+  output list<Absyn.ElementItem> outElementsAfter = inElementsAfter;
+  output Integer outRemainingOffset = inOffset;
+  output Boolean outReachedEnd;
+protected
+  Absyn.ElementItem e;
+algorithm
+  if inOffset > 0 then
+    // Positive offset, move elements from after to before.
+    while outRemainingOffset > 0 loop
+      if listEmpty(outElementsAfter) then // No more elements, we're done.
+        break;
+      else
+        e :: outElementsAfter := outElementsAfter;
+        outElementsBefore := e :: outElementsBefore;
+
+        // Decrease the offset for each class we move.
+        if Absyn.isElementItemClass(e) then
+          outRemainingOffset := outRemainingOffset - 1;
+        end if;
+      end if;
+    end while;
+    outReachedEnd := listEmpty(outElementsAfter);
+  else
+    // Negative offset, move elements from before to after.
+    while outRemainingOffset < 0 loop
+      if listEmpty(outElementsBefore) then // No more elements, we're done.
+        break;
+      else
+        e :: outElementsBefore := outElementsBefore;
+        outElementsAfter := e :: outElementsAfter;
+
+        // Increase the offset for each class we move.
+        if Absyn.isElementItemClass(e) then
+          outRemainingOffset := outRemainingOffset + 1;
+        end if;
+      end if;
+    end while;
+    outReachedEnd := listEmpty(outElementsBefore);
+  end if;
+end moveClassInSplitClassPart;
+
+protected function deleteClassInClassPart
+  input String inName;
+  input Absyn.ClassPart inClassPart;
+  output Absyn.ClassPart outClassPart = inClassPart;
+  output Option<Absyn.ElementItem> outClass;
+protected
+  list<Absyn.ElementItem> elements;
+algorithm
+  (outClassPart, outClass) := match outClassPart
+    case Absyn.PUBLIC()
+      algorithm
+        (elements, outClass) := List.deleteMemberOnTrue(inName,
+          outClassPart.contents, Absyn.isElementItemClassNamed);
+        outClassPart.contents := elements;
+      then
+        (outClassPart, outClass);
+
+    case Absyn.PROTECTED()
+      algorithm
+        (elements, outClass) := List.deleteMemberOnTrue(inName,
+          outClassPart.contents, Absyn.isElementItemClassNamed);
+        outClassPart.contents := elements;
+      then
+        (outClassPart, outClass);
+
+    else (outClassPart, NONE());
+  end match;
+end deleteClassInClassPart;
+
+protected function moveClassToTopInClass
+  input String inName;
+  input Absyn.Class inClass;
+  output Absyn.Class outClass;
+protected
+  Absyn.ClassDef body;
+algorithm
+  Absyn.CLASS(body = body) := inClass;
+
+  body := match body
+    case Absyn.PARTS()
+      algorithm
+        body.classParts := moveClassToTopInClassParts(inName, body.classParts);
+      then
+        body;
+
+    case Absyn.CLASS_EXTENDS()
+      algorithm
+        body.parts := moveClassToTopInClassParts(inName, body.parts);
+      then
+        body;
+
+  end match;
+
+  outClass := Absyn.setClassBody(inClass, body);
+end moveClassToTopInClass;
+
+protected function moveClassToTopInClassParts
+  input String inName;
+  input list<Absyn.ClassPart> inClassParts;
+  output list<Absyn.ClassPart> outClassParts;
+protected
+  Absyn.ClassPart part, first;
+  list<Absyn.ClassPart> acc = {}, rest = inClassParts;
+  Option<Absyn.ElementItem> ocls;
+  Absyn.ElementItem cls;
+  Boolean is_public;
+algorithm
+  while true loop
+    part :: rest := rest;
+    (part, ocls) := deleteClassInClassPart(inName, part);
+
+    if isSome(ocls) then
+      // Remove the part if it's now empty and not the only part.
+      if not Absyn.isEmptyClassPart(part) or listEmpty(acc) or listEmpty(rest) then
+        rest := part :: rest;
+      end if;
+      outClassParts := listAppend(listReverse(acc), rest);
+      break;
+    else
+      acc := part :: acc;
+    end if;
+  end while;
+
+  SOME(cls) := ocls;
+  first :: rest := outClassParts;
+
+  outClassParts := match (first, part)
+    case (Absyn.PUBLIC(), Absyn.PUBLIC())
+      algorithm
+        first.contents := cls :: first.contents;
+      then
+        first :: rest;
+    case (Absyn.PROTECTED(), Absyn.PROTECTED())
+      algorithm
+        first.contents := cls :: first.contents;
+      then
+        first :: rest;
+    case (_, Absyn.PUBLIC()) then Absyn.PUBLIC({cls}) :: first :: rest;
+    case (_, Absyn.PROTECTED()) then Absyn.PROTECTED({cls}) :: first :: rest;
+  end match;
+end moveClassToTopInClassParts;
+
+protected function moveClassToBottomInClass
+  input String inName;
+  input Absyn.Class inClass;
+  output Absyn.Class outClass;
+protected
+  Absyn.ClassDef body;
+algorithm
+  Absyn.CLASS(body = body) := inClass;
+
+  body := match body
+    case Absyn.PARTS()
+      algorithm
+        body.classParts := moveClassToBottomInClassParts(inName, body.classParts);
+      then
+        body;
+
+    case Absyn.CLASS_EXTENDS()
+      algorithm
+        body.parts := moveClassToBottomInClassParts(inName, body.parts);
+      then
+        body;
+
+  end match;
+
+  outClass := Absyn.setClassBody(inClass, body);
+end moveClassToBottomInClass;
+
+protected function moveClassToBottomInClassParts
+  input String inName;
+  input list<Absyn.ClassPart> inClassParts;
+  output list<Absyn.ClassPart> outClassParts;
+protected
+  Absyn.ClassPart part, last;
+  list<Absyn.ClassPart> acc = {}, rest = inClassParts;
+  Option<Absyn.ElementItem> ocls;
+  Absyn.ElementItem cls;
+  Boolean is_public;
+algorithm
+  while true loop
+    part :: rest := rest;
+    (part, ocls) := deleteClassInClassPart(inName, part);
+
+    if isSome(ocls) then
+      break;
+    else
+      acc := part :: acc;
+    end if;
+  end while;
+
+  SOME(cls) := ocls;
+
+  // Remove the part if it's empty and not the only remaining part.
+  if not Absyn.isEmptyClassPart(part) or listEmpty(rest) then
+    rest := part :: rest;
+  end if;
+
+  last :: rest := listReverse(rest);
+
+  rest := match (last, part)
+    case (Absyn.PUBLIC(), Absyn.PUBLIC())
+      algorithm
+        last.contents := listAppend(last.contents, {cls});
+      then
+        last :: rest;
+    case (Absyn.PROTECTED(), Absyn.PROTECTED())
+      algorithm
+        last.contents := listAppend(last.contents, {cls});
+      then
+        last :: rest;
+    case (_, Absyn.PUBLIC()) then Absyn.PUBLIC({cls}) :: last :: rest;
+    case (_, Absyn.PROTECTED()) then Absyn.PROTECTED({cls}) :: last :: rest;
+  end match;
+
+  outClassParts := listAppend(listReverse(acc), listReverse(rest));
+end moveClassToBottomInClassParts;
 
 protected function copyClass
   input Absyn.Class inClass;
@@ -5133,17 +5830,25 @@ protected function getClassInformation
   output Values.Value res_1;
 protected
   String name,file,strPartial,strFinal,strEncapsulated,res,cmt,str_readonly,str_sline,str_scol,str_eline,str_ecol;
-  String dim_str;
-  Boolean partialPrefix,finalPrefix,encapsulatedPrefix,isReadOnly;
+  String dim_str,lastIdent;
+  Boolean partialPrefix,finalPrefix,encapsulatedPrefix,isReadOnly,isProtectedClass,isDocClass;
   Absyn.Restriction restr;
   Absyn.ClassDef cdef;
-  Absyn.Class c;
   Integer sl,sc,el,ec;
+  Absyn.Path classPath;
 algorithm
   Absyn.CLASS(name,partialPrefix,finalPrefix,encapsulatedPrefix,restr,cdef,SOURCEINFO(file,isReadOnly,sl,sc,el,ec,_)) := Interactive.getPathedClassInProgram(path, p);
   res := Dump.unparseRestrictionStr(restr);
   cmt := getClassComment(cdef);
   file := Util.testsuiteFriendly(file);
+  if Absyn.pathIsIdent(Absyn.makeNotFullyQualified(path)) then
+    isProtectedClass := false;
+  else
+    lastIdent := Absyn.pathLastIdent(Absyn.makeNotFullyQualified(path));
+    classPath := Absyn.stripLast(path);
+    isProtectedClass := Interactive.isProtectedClass(classPath, lastIdent, p);
+  end if;
+  isDocClass := Interactive.getDocumentationClassAnnotation(path, p);
   res_1 := Values.TUPLE({
     Values.STRING(res),
     Values.STRING(cmt),
@@ -5156,7 +5861,9 @@ algorithm
     Values.INTEGER(sc),
     Values.INTEGER(el),
     Values.INTEGER(ec),
-    getClassDimensions(cdef)
+    getClassDimensions(cdef),
+    Values.BOOL(isProtectedClass),
+    Values.BOOL(isDocClass)
   });
 end getClassInformation;
 
@@ -5225,7 +5932,7 @@ algorithm
         typename := matchcontinue ()
           case ()
             equation
-              (_,_,env) = Lookup.lookupClass(FCore.emptyCache(), inEnv, p, false);
+              (_,_,env) = Lookup.lookupClass(FCore.emptyCache(), inEnv, p, NONE());
               SOME(envpath) = FGraph.getScopePath(env);
               tpname = Absyn.pathLastIdent(p);
               p_1 = Absyn.joinPaths(envpath, Absyn.IDENT(tpname));

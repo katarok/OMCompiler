@@ -218,7 +218,7 @@ template getAliasVarXml(AliasVariable aliasvar)
  "Returns the alias Attribute of ScalarVariable."
 ::=
 match aliasvar
-  case NOALIAS(__) then ""
+  case NOALIAS(__) then "noAlias"
   case ALIAS(__) then '<%crefStrXml(varName)%>'
   case NEGATEDALIAS(__) then '-<%crefStrXml(varName)%>'
   else ""
@@ -638,7 +638,7 @@ let alg =(statements |> stmt =>
   >>
 end equationAlgorithmXml;
 
- template initialEquationsXml(ModelInfo modelInfo)
+template initialEquationsXml(ModelInfo modelInfo)
  "Function for Inititial Equations."
 ::=
 match modelInfo
@@ -656,9 +656,9 @@ case MODELINFO(varInfo=VARINFO(numStateVars=numStateVars),vars=SIMVARS(__)) then
   >>
 end initialEquationsXml;
 
- template initialEquationXml(SimVar var)
-   "Generates XML code for Inititial Equations."
- ::=
+template initialEquationXml(SimVar var)
+  "Generates XML code for Inititial Equations."
+::=
   match var
     case SIMVAR(__) then
     let identName = '<%crefXml(name)%>'
@@ -668,10 +668,10 @@ end initialEquationsXml;
       let &preExp = buffer "" /*BUFD*/
          <<
          <equ:Equation>
-           <equ:Sub>
+           <exp:Sub>
              <%identName%>
              <%daeExpXml(exp, contextOther, &preExp, &varDecls)%>
-           </equ:Sub>
+           </exp:Sub>
          </equ:Equation><%\n%>
          >>
 end initialEquationXml;

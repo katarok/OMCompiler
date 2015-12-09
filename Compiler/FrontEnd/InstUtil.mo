@@ -881,20 +881,20 @@ algorithm
     // we haven't found the class, do nothing
     case (_, _, _, _, {SCode.EXTENDS(baseClassPath=p)})
       equation
-        failure((_, _, _) = Lookup.lookupClass(inCache, inEnv, p, false));
+        failure((_, _, _) = Lookup.lookupClass(inCache, inEnv, p));
       then ();
 
     // we found te class, check the restriction
     case (_, _, _, r1, {SCode.EXTENDS(baseClassPath=p)})
       equation
-        (_,SCode.CLASS(restriction=r2),_) = Lookup.lookupClass(inCache,inEnv,p,false);
+        (_,SCode.CLASS(restriction=r2),_) = Lookup.lookupClass(inCache,inEnv,p);
         checkExtendsRestrictionMatch(r1, r2);
       then ();
 
     // make some waves that this is not correct
     case (_, _, _, r1, {SCode.EXTENDS(baseClassPath=p)})
       equation
-        (_,SCode.CLASS(restriction=r2),_) = Lookup.lookupClass(inCache, inEnv, p, false);
+        (_,SCode.CLASS(restriction=r2),_) = Lookup.lookupClass(inCache, inEnv, p);
         print("Error!: " + SCodeDump.restrString(r1) + " " + FGraph.printGraphPathStr(inEnv) +
               " cannot be extended by " + SCodeDump.restrString(r2) + " " + Absyn.pathString(p) + " due to derived/base class restrictions.\n");
       then fail();
@@ -1465,7 +1465,7 @@ algorithm
       equation
         name2 = Absyn.printComponentRefStr(dep);
         true = stringEq(name2,name1);
-        cmod = DAE.MOD(SCode.NOT_FINAL(),SCode.NOT_EACH(),{DAE.NAMEMOD(name2,cmod)},NONE());
+        cmod = DAE.MOD(SCode.NOT_FINAL(),SCode.NOT_EACH(),{DAE.NAMEMOD(name2,cmod)},NONE(), Absyn.dummyInfo);
       then
         cmod;
     case(dep,_::elems)
@@ -2685,7 +2685,7 @@ algorithm
       equation
         // compmod = Mod.getModifs(mods, n, m);
         compmod = Mod.lookupCompModification(mods, n);
-        cmod_1 = Mod.merge(compmod, cmod, env, pre);
+        cmod_1 = Mod.merge(compmod, cmod);
 
         /*
         print("InstUtil.addCompToEnv: " +
@@ -2810,7 +2810,7 @@ algorithm
     case (_,SCode.REDECL(f, e, SCode.CLASS(name = nInner, classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(path = Absyn.IDENT(nDerivedInner))))))
       equation
         // lookup the class mod in the outer
-        (DAE.REDECL(tplSCodeElementModLst = (cls,_)::_)) = Mod.lookupModificationP(inModOuter, Absyn.IDENT(nDerivedInner));
+        DAE.REDECL(element = cls) = Mod.lookupModificationP(inModOuter, Absyn.IDENT(nDerivedInner));
         cls = SCode.setClassName(nInner, cls);
       then
         SCode.REDECL(f, e, cls);
@@ -2819,7 +2819,7 @@ algorithm
     case (_,SCode.REDECL(f, e, SCode.CLASS(name = nInner, classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(path = Absyn.IDENT(_))))))
       equation
         // lookup the class mod in the outer
-        (DAE.REDECL(tplSCodeElementModLst = (cls,_)::_)) = Mod.lookupModificationP(inModOuter, Absyn.IDENT(nInner));
+        DAE.REDECL(element = cls) = Mod.lookupModificationP(inModOuter, Absyn.IDENT(nInner));
       then
         SCode.REDECL(f, e, cls);
 
@@ -3064,8 +3064,8 @@ algorithm
         equality(ad1 = ad2);
         equality(cond1 = cond2);
         // if we lookup tpath1 and tpath2 and reach the same class, we're fine!
-        (_, c1, env1) = Lookup.lookupClass(cache, env, tpath1, false);
-        (_, c2, env2) = Lookup.lookupClass(cache, env, tpath2, false);
+        (_, c1, env1) = Lookup.lookupClass(cache, env, tpath1);
+        (_, c2, env2) = Lookup.lookupClass(cache, env, tpath2);
         // the class has the same environment
         true = stringEq(FGraph.printGraphPathStr(env1), FGraph.printGraphPathStr(env2));
         // the classes are the same!
@@ -3093,8 +3093,8 @@ algorithm
         equality(ad1 = ad2);
         equality(cond1 = cond2);
         // if we lookup tpath1 and tpath2 and reach the same class, we're fine!
-        (_, c1, env1) = Lookup.lookupClass(cache, env, tpath1, false);
-        (_, c2, env2) = Lookup.lookupClass(cache, env, tpath2, false);
+        (_, c1, env1) = Lookup.lookupClass(cache, env, tpath1);
+        (_, c2, env2) = Lookup.lookupClass(cache, env, tpath2);
         // the class has the same environment
         true = stringEq(FGraph.printGraphPathStr(env1), FGraph.printGraphPathStr(env2));
         // the classes are the same!
@@ -3236,16 +3236,17 @@ algorithm
       Option<DAE.EqMod> oe;
       list<DAE.SubMod> subs;
       list<String> compNames;
+      SourceInfo info;
 
     case (_,{}) then inMod;
     case(DAE.NOMOD(),_ ) then DAE.NOMOD();
     case(DAE.REDECL(_,_,_),_) then inMod;
-    case(DAE.MOD(f,e,subs,oe),_)
+    case(DAE.MOD(f,e,subs,oe,info),_)
       equation
         compNames = List.map(elems,SCode.elementName);
         subs = keepConstrainingTypeModifersOnly2(subs,compNames);
       then
-        DAE.MOD(f,e,subs,oe);
+        DAE.MOD(f,e,subs,oe,info);
   end matchcontinue;
 end keepConstrainingTypeModifersOnly;
 
@@ -3301,7 +3302,7 @@ algorithm
     case(NONE(),_,_) then {};
     case(SOME(SCode.CONSTRAINCLASS(constrainingClass = path)),_,_)
       equation
-        (_,SCode.CLASS(name = name, classDef = SCode.PARTS(elementLst=selems)), _) = Lookup.lookupClass(FCore.emptyCache(),env,path,false);
+        (_,SCode.CLASS(name = name, classDef = SCode.PARTS(elementLst=selems)), _) = Lookup.lookupClass(FCore.emptyCache(),env,path);
         (classes,classextendselts,extendselts,compelts) = splitElts(selems);
         (_,_,_,_,extcomps,_,_,_,_) = InstExtends.instExtendsAndClassExtendsList(FCore.emptyCache(), env, InnerOuter.emptyInstHierarchy, DAE.NOMOD(),  pre, extendselts, classextendselts, selems, ClassInf.UNKNOWN(Absyn.IDENT("")), name, true, false);
         extcompelts = List.map(extcomps,Util.tuple21);
@@ -3310,7 +3311,7 @@ algorithm
         compelts;
     case (SOME(SCode.CONSTRAINCLASS(path, mod, cmt)), _, _)
       equation
-        (_,SCode.CLASS(classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(path = path))),_) = Lookup.lookupClass(FCore.emptyCache(),env,path,false);
+        (_,SCode.CLASS(classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(path = path))),_) = Lookup.lookupClass(FCore.emptyCache(),env,path);
         compelts = extractConstrainingComps(SOME(SCode.CONSTRAINCLASS(path, mod, cmt)),env,pre);
       then
         compelts;
@@ -3693,7 +3694,7 @@ algorithm
                             classDef = SCode.DERIVED(Absyn.TPATH(path = cn, arrayDim = ad),modifications = mod)),
           dims, impl)
       equation
-        (cache,cl,cenv) = Lookup.lookupClass(cache, env, cn, true);
+        (cache,cl,cenv) = Lookup.lookupClass(cache, env, cn, SOME(info));
         owncref = Absyn.CREF_IDENT(id,{});
         ad_1 = getOptionArraydim(ad);
         env = addEnumerationLiteralsToEnv(env, cl);
@@ -3705,7 +3706,7 @@ algorithm
         type_mods = Mod.addEachIfNeeded(type_mods, dim2);
         // do not add each to mod_1, it should have it already!
         // mod_1 = Mod.addEachIfNeeded(mod_1, dim2);
-        type_mods = Mod.merge(mod_1, type_mods, env, pre);
+        type_mods = Mod.merge(mod_1, type_mods);
         res = listAppend(dim2, dim1);
       then
         (cache,res,cl,type_mods);
@@ -3722,10 +3723,10 @@ algorithm
       equation
         (_,_,{SCode.EXTENDS(path, _, mod,_, info)},{}) = splitElts(els); // ONLY ONE extends!
         (cache,mod_1) = Mod.elabModForBasicType(cache, env, ih, pre, mod, impl, Mod.EXTENDS(path), info);
-        (cache,cl,_) = Lookup.lookupClass(cache, env, path, false);
+        (cache,cl,_) = Lookup.lookupClass(cache, env, path);
         (cache,res,cl,type_mods) = getUsertypeDimensions(cache,env,ih,pre,cl,{},impl);
         // type_mods = Mod.addEachIfNeeded(type_mods, res);
-        type_mods = Mod.merge(mod_1, type_mods, env, pre);
+        type_mods = Mod.merge(mod_1, type_mods);
       then
         (cache,res,cl,type_mods);
 
@@ -3827,7 +3828,7 @@ algorithm
         false = FGraph.isTopScope(inNewEnv);
         id = FNode.refName(FGraph.lastScopeRef(inNewEnv));
         (rest, _) = FGraph.stripLastScopeRef(inNewEnv);
-        (_, cls, _) = Lookup.lookupClass(inCache, rest, Absyn.IDENT(id), false);
+        (_, cls, _) = Lookup.lookupClass(inCache, rest, Absyn.IDENT(id));
         ci_state = ClassInf.start(SCode.getClassRestriction(cls), FGraph.getGraphName(inNewEnv));
       then
         ci_state;
@@ -3890,7 +3891,7 @@ algorithm
       DAE.Exp exp;
       String exp_str;
 
-    case (DAE.DIM_UNKNOWN(), DAE.MOD(eqModOption =
+    case (DAE.DIM_UNKNOWN(), DAE.MOD(binding =
             SOME(DAE.TYPED(modifierAsExp = exp))), _, _)
       equation
         (d :: _) = Expression.expDimensions(exp);
@@ -3899,7 +3900,7 @@ algorithm
     // TODO: We should print an error if we fail to deduce the dimensions from
     // the modifier, but we do not yet handle some cases (such as
     // Modelica.Blocks.Sources.KinematicPTP), so just print a warning for now.
-    case (DAE.DIM_UNKNOWN(), DAE.MOD(eqModOption =
+    case (DAE.DIM_UNKNOWN(), DAE.MOD(binding =
             SOME(DAE.TYPED(modifierAsExp = exp))), _, _)
       equation
         exp_str = ExpressionDump.printExpStr(exp);
@@ -4272,7 +4273,7 @@ algorithm
         cmod_1 = Mod.stripSubmod(cmod);
         m_1 = SCode.stripSubmod(m);
         (cache,m_2) = Mod.elabMod(cache, env, InnerOuter.emptyInstHierarchy, Prefix.NOPRE(), m_1, false, Mod.COMPONENT(id), info);
-        mod_2 = Mod.merge(cmod_1, m_2, env, Prefix.NOPRE());
+        mod_2 = Mod.merge(cmod_1, m_2);
         SOME(eq) = Mod.modEquation(mod_2);
         (cache,dims) = elabComponentArraydimFromEnv2(cache,eq, env);
       then
@@ -4437,7 +4438,7 @@ algorithm
       then
         (cache,dim);
 
-    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,prop,_,info)),impl,st,doVect,_ ,pre,_,inst_dims) /* Untyped expressions must be elaborated. */
+    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,prop,_)),impl,st,doVect,_ ,pre,info,inst_dims) /* Untyped expressions must be elaborated. */
       equation
         t = Types.getPropType(prop);
         (cache,dim1) = Static.elabArrayDims(cache,env, cref, ad, impl, st,doVect,pre,info);
@@ -4447,7 +4448,7 @@ algorithm
       then
         (cache,dim3);
 
-    case (cache,env,cref,_,ad,SOME(DAE.UNTYPED(aexp,info)),impl,st,doVect, _,pre,_,inst_dims)
+    case (cache,env,cref,_,ad,SOME(DAE.UNTYPED(aexp)),impl,st,doVect, _,pre,info,inst_dims)
       equation
         (cache,e_1,prop,_) = Static.elabExp(cache,env, aexp, impl, st,doVect,pre,info);
         (cache, e_1, prop) = Ceval.cevalIfConstant(cache, env, e_1, prop, impl, info);
@@ -4459,7 +4460,7 @@ algorithm
       then
         (cache,dim3);
 
-    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,DAE.PROP(t,_),_,info)),impl,st,doVect, _,pre,_,inst_dims)
+    case (cache,env,cref,_,ad,SOME(DAE.TYPED(e,_,DAE.PROP(t,_),_)),impl,st,doVect, _,pre,info,inst_dims)
       equation
         // adrpo: do not display error when running checkModel
         //        TODO! FIXME! check if this doesn't actually get rid of useful error messages
@@ -4912,13 +4913,13 @@ algorithm
   local
     DAE.EqMod eq;
     DAE.Exp e;
-  case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(eqModOption = SOME(DAE.TYPED(modifierAsExp=e)))))
+  case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(binding = SOME(DAE.TYPED(modifierAsExp=e)))))
     equation
       then (inputVar,DAE.NO_DERIVATIVE(e));
-  case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(eqModOption = NONE())))
+  case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(binding = NONE())))
     equation
     then (inputVar,DAE.NO_DERIVATIVE(DAE.ICONST(1)));
-  case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(eqModOption = NONE()))) // zeroderivative
+  case(DAE.NAMEMOD(inputVar,mod = DAE.MOD(binding = NONE()))) // zeroderivative
   then (inputVar,DAE.ZERO_DERIVATIVE());
 
   else ("",DAE.ZERO_DERIVATIVE());
@@ -6818,7 +6819,7 @@ algorithm
 
     case(_,_,_,_,NONE(),_) then fail();
 
-    case(cache, _, ih, pre, SOME(DAE.MOD(_,_, lsm ,_)), SCode.CLASS(name=str))
+    case(cache, _, ih, pre, SOME(DAE.MOD(subModLst = lsm)), SCode.CLASS(name=str))
       equation
         // fprintln(Flags.INST_TRACE, "Mods in addClassdefsToEnv3: " + Mod.printModStr(mo) + " class name: " + str);
         (mo2,_) = extractCorrectClassMod2(lsm,str,{});
@@ -7654,18 +7655,19 @@ public function extractClassDefComment
   input FCore.Graph env;
   input SCode.ClassDef classDef;
   input SCode.Comment inComment;
+  input SourceInfo inInfo;
   output SCode.Comment comment;
 algorithm
-  comment := matchcontinue(cache, env, classDef, inComment)
+  comment := matchcontinue classDef
     local
       list<SCode.Annotation> al;
       Absyn.Path p;
       SCode.ClassDef cd;
       SCode.Comment cmt;
 
-    case (_, _, SCode.DERIVED(typeSpec = Absyn.TPATH(path = p)), _)
+    case SCode.DERIVED(typeSpec = Absyn.TPATH(path = p))
       equation
-        (_, SCode.CLASS(cmt=cmt), _) = Lookup.lookupClass(cache, env, p, true);
+        (_, SCode.CLASS(cmt=cmt), _) = Lookup.lookupClass(cache, env, p, SOME(inInfo));
         cmt = mergeClassComments(inComment, cmt);
       then cmt;
 
@@ -7904,7 +7906,7 @@ algorithm
       Absyn.Path path;
     // you cannot redeclare a basic type, only the properties and the binding, i.e.
     // redeclare constant Boolean standardOrderComponents = true
-    case (DAE.REDECL(_, _, {(SCode.COMPONENT(typeSpec=Absyn.TPATH(path=path)), _)})) equation
+    case DAE.REDECL(element = SCode.COMPONENT(typeSpec=Absyn.TPATH(path=path))) equation
       true = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
 
         name = Absyn.pathFirstIdent(path);
@@ -7912,7 +7914,7 @@ algorithm
       true = listMember(name, {"Real", "Integer", "Boolean", "String", "Clock"});
     then true;
 
-    case (DAE.REDECL(_, _, {(SCode.COMPONENT(typeSpec=Absyn.TPATH(path=path)), _)})) equation
+    case DAE.REDECL(element = SCode.COMPONENT(typeSpec=Absyn.TPATH(path=path))) equation
       false = intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33);
 
       name = Absyn.pathFirstIdent(path);

@@ -41,6 +41,11 @@ public:
     virtual void initIntAliasArray(std::vector<int> indices, int* ref_data[]) = 0;
     virtual void initBoolAliasArray(std::vector<int> indices, bool* ref_data[]) = 0;
     virtual void initStringAliasArray(std::vector<int> indices, string* ref_data[]) = 0;
+    /*Methods to read variable from simvars memory*/
+    virtual const double& getRealVar(size_t i) = 0;
+    virtual const int& getIntVar(size_t i)= 0;
+    virtual const bool& getBoolVar(size_t i)= 0;
+
     /*Methods for initialize scalar model variables in simvars memory*/
     virtual double& initRealVar(size_t i) = 0;
     virtual int& initIntVar(size_t i)= 0;
@@ -52,11 +57,7 @@ public:
      virtual void initPreVariables()= 0;
      /*access methods for pre-variable*/
      virtual double& getPreVar(const double& var)=0;
-     virtual double& getPreVar(const int& var)=0;
-     virtual double& getPreVar(const bool& var)=0;
-
-     virtual void setPreVar(double& var)=0;
-     virtual void setPreVar(int& var)=0;
-     virtual void setPreVar(bool& var)=0;
+     virtual int& getPreVar(const int& var)=0;
+     virtual bool& getPreVar(const bool& var)=0;
 };
 /** @} */ // end of coreSystem

@@ -810,6 +810,25 @@ algorithm
   end match;
 end applyOptionOrDefault2;
 
+public function applyOption_2<T>
+  input Option<T> inValue1;
+  input Option<T> inValue2;
+  input FuncType inFunc;
+  output Option<T> outValue;
+
+  partial function FuncType
+    input T inValue1;
+    input T inValue2;
+    output T outValue;
+  end FuncType;
+algorithm
+  outValue := match (inValue1, inValue2)
+    case (NONE(), _) then inValue2;
+    case (_, NONE()) then inValue1;
+    else SOME(inFunc(getOption(inValue1), getOption(inValue2)));
+  end match;
+end applyOption_2;
+
 public function makeOption<T>
   "Makes a value into value option, using SOME(value)"
   input T inValue;
@@ -1715,6 +1734,43 @@ algorithm
                 then inFileName
                 else stringAppendList({pwd,pd,inFileName});
 end absoluteOrRelative;
+
+public function intLstString
+  input list<Integer> lst;
+  output String s;
+algorithm
+  s := stringDelimitList(List.map(lst,intString),", ");
+end intLstString;
+
+public function sourceInfoIsEmpty
+  "Returns whether the given SourceInfo is empty or not."
+  input SourceInfo inInfo;
+  output Boolean outIsEmpty;
+algorithm
+  outIsEmpty := match inInfo
+    case SOURCEINFO(fileName = "") then true;
+    else false;
+  end match;
+end sourceInfoIsEmpty;
+
+public function sourceInfoIsEqual
+  "Returns whether two SourceInfo are equal or not."
+  input SourceInfo inInfo1;
+  input SourceInfo inInfo2;
+  output Boolean outIsEqual;
+algorithm
+  outIsEqual := match (inInfo1, inInfo2)
+    case (SOURCEINFO(), SOURCEINFO())
+      then inInfo1.fileName == inInfo2.fileName and
+           inInfo1.isReadOnly == inInfo2.isReadOnly and
+           inInfo1.lineNumberStart == inInfo2.lineNumberStart and
+           inInfo1.columnNumberStart == inInfo2.columnNumberStart and
+           inInfo1.lineNumberEnd == inInfo2.lineNumberEnd and
+           inInfo1.columnNumberEnd == inInfo2.columnNumberEnd;
+
+    else false;
+  end match;
+end sourceInfoIsEqual;
 
 annotation(__OpenModelica_Interface="util");
 end Util;

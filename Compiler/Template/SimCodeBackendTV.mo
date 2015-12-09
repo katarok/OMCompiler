@@ -264,6 +264,11 @@ package FMI
     output String fmiType;
   end getFMIType;
 
+  function isFMIVersion10 "Checks if the FMI version is 1.0."
+    input String inFMUVersion;
+    output Boolean success;
+  end isFMIVersion10;
+
   function isFMIVersion20 "Checks if the FMI version is 2.0."
     input String inFMUVersion;
     output Boolean success;
@@ -273,6 +278,11 @@ package FMI
     input String inFMIType;
     output Boolean success;
   end isFMICSType;
+
+  function isFMIMEType "Checks if FMU type is model exchange"
+    input String inFMIType;
+    output Boolean success;
+  end isFMIMEType;
 
   function getEnumerationTypeFromTypes
     input list<TypeDefinitions> inTypeDefinitionsList;

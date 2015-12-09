@@ -118,6 +118,7 @@ end translateInitFile;
     extern int <%symbolName(modelNamePrefixStr,"function_storeDelayed")%>(DATA *data, threadData_t *threadData);
     extern int <%symbolName(modelNamePrefixStr,"updateBoundVariableAttributes")%>(DATA *data, threadData_t *threadData);
     extern int <%symbolName(modelNamePrefixStr,"functionInitialEquations")%>(DATA *data, threadData_t *threadData);
+    extern int <%symbolName(modelNamePrefixStr,"functionInitialEquations_lambda0")%>(DATA *data, threadData_t *threadData);
     extern int <%symbolName(modelNamePrefixStr,"functionRemovedInitialEquations")%>(DATA *data, threadData_t *threadData);
     extern int <%symbolName(modelNamePrefixStr,"updateBoundParameters")%>(DATA *data, threadData_t *threadData);
     extern int <%symbolName(modelNamePrefixStr,"checkForAsserts")%>(DATA *data, threadData_t *threadData);
@@ -147,6 +148,7 @@ end translateInitFile;
     extern void <%symbolName(modelNamePrefixStr,"function_initSynchronous")%>(DATA * data, threadData_t *threadData);
     extern void <%symbolName(modelNamePrefixStr,"function_updateSynchronous")%>(DATA * data, threadData_t *threadData, long i);
     extern int <%symbolName(modelNamePrefixStr,"function_equationsSynchronous")%>(DATA * data, threadData_t *threadData, long i);
+    extern void <%symbolName(modelNamePrefixStr,"read_input_fmu")%>(MODEL_DATA* modelData, SIMULATION_INFO* simulationData);
     extern void <%symbolName(modelNamePrefixStr,"function_savePreSynchronous")%>(DATA *data, threadData_t *threadData);
     <%\n%>
     >>
@@ -283,9 +285,9 @@ template functionInitSynchronous(list<ClockedPartition> clockedPartitions, Strin
         let subClocksInfo = subPartitions |> subPartition =>
                             subPartitionStr(subPartition); separator="\n"
         <<
-        data->modelData.clocksInfo[i].nSubClocks = <%listLength(subPartitions)%>;
-        data->modelData.clocksInfo[i].subClocks = data->modelData.subClocksInfo + j;
-        data->modelData.clocksInfo[i].isBoolClock = <%boolClock%>;
+        data->modelData->clocksInfo[i].nSubClocks = <%listLength(subPartitions)%>;
+        data->modelData->clocksInfo[i].subClocks = data->modelData->subClocksInfo + j;
+        data->modelData->clocksInfo[i].isBoolClock = <%boolClock%>;
         i++;
         <%subClocksInfo%>
 
@@ -310,10 +312,10 @@ match subPartition
       case NONE() then ""
       else "External"
     <<
-    <%rationalStr("data->modelData.subClocksInfo[j].shift", subClock.shift)%>
-    <%rationalStr("data->modelData.subClocksInfo[j].factor", subClock.factor)%>
-    data->modelData.subClocksInfo[j].solverMethod = "<%methodStr%>";
-    data->modelData.subClocksInfo[j].holdEvents = <%boolStrC(holdEvents)%>;
+    <%rationalStr("data->modelData->subClocksInfo[j].shift", subClock.shift)%>
+    <%rationalStr("data->modelData->subClocksInfo[j].factor", subClock.factor)%>
+    data->modelData->subClocksInfo[j].solverMethod = "<%methodStr%>";
+    data->modelData->subClocksInfo[j].holdEvents = <%boolStrC(holdEvents)%>;
     j++;
     >>
 end subPartitionStr;
@@ -366,17 +368,17 @@ match baseClock
   case DAE.BOOLEAN_CLOCK(__) then
     let cond = cref(expCref(condition))
     <<
-    if (data->simulationInfo.clocksData[i].cnt > 0)
-      data->simulationInfo.clocksData[i].interval = data->localData[0]->timeValue - data->simulationInfo.clocksData[i].timepoint;
+    if (data->simulationInfo->clocksData[i].cnt > 0)
+      data->simulationInfo->clocksData[i].interval = data->localData[0]->timeValue - data->simulationInfo->clocksData[i].timepoint;
     else
-      data->simulationInfo.clocksData[i].interval = <%startInterval%>;
+      data->simulationInfo->clocksData[i].interval = <%startInterval%>;
     >>
   else
     let &preExp = buffer ""
     let intvl = daeExp(getClockInterval(baseClock), contextOther, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    data->simulationInfo.clocksData[i].interval = <%intvl%>;
+    data->simulationInfo->clocksData[i].interval = <%intvl%>;
     >>
 end updatePartition;
 
@@ -423,7 +425,7 @@ template functionEquationsSynchronous(Integer i, list<tuple<SimCodeVar.SimVar, B
 ::=
   let &varDecls = buffer ""
   let &eqfuncs = buffer ""
-  let fncalls = equations |> eq => equation_(eq, contextOther, &varDecls, &eqfuncs, modelNamePrefix); separator="\n"
+  let fncalls = equations |> eq => equation_(i, eq, contextOther, &varDecls, &eqfuncs, modelNamePrefix); separator="\n"
   <<
   <%&eqfuncs%>
 
@@ -480,12 +482,13 @@ template simulationFile_nls(SimCode simCode, String guid)
     #if defined(__cplusplus)
     extern "C" {
     #endif
-    <%functionNonLinearResiduals(initialEquations,modelNamePrefixStr)%>
+    <%functionNonLinearResiduals(initialEquations, modelNamePrefixStr)%>
+    <%functionNonLinearResiduals(initialEquations_lambda0, modelNamePrefixStr)%>
     <%functionNonLinearResiduals(parameterEquations,modelNamePrefixStr)%>
     <%functionNonLinearResiduals(allEquations,modelNamePrefixStr)%>
     <%jacobianbody%>
 
-    <%functionInitialNonLinearSystems(initialEquations, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefixStr)%>
+    <%functionInitialNonLinearSystems(initialEquations, initialEquations_lambda0, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefixStr)%>
 
     #if defined(__cplusplus)
     }
@@ -509,9 +512,9 @@ template simulationFile_lsy(SimCode simCode, String guid)
     extern "C" {
     #endif
 
-    <%functionSetupLinearSystems(initialEquations, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefix(simCode))%>
+    <%functionSetupLinearSystems(initialEquations, initialEquations_lambda0, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefix(simCode))%>
 
-    <%functionInitialLinearSystems(initialEquations, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefix(simCode))%>
+    <%functionInitialLinearSystems(initialEquations, initialEquations_lambda0, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefix(simCode))%>
 
     #if defined(__cplusplus)
     }
@@ -590,9 +593,10 @@ template simulationFile_inz(SimCode simCode, String guid)
     #endif
 
     <%functionInitialEquations(initialEquations, modelNamePrefix(simCode))%>
+    <%functionInitialEquations_lambda0(initialEquations_lambda0, modelNamePrefix(simCode))%>
     <%functionRemovedInitialEquations(removedInitialEquations, modelNamePrefix(simCode))%>
 
-    <%functionInitialMixedSystems(initialEquations, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefix(simCode))%>
+    <%functionInitialMixedSystems(initialEquations, initialEquations_lambda0, parameterEquations, allEquations, jacobianMatrixes, modelNamePrefix(simCode))%>
 
     #if defined(__cplusplus)
     }
@@ -707,7 +711,7 @@ template simulationFile_mix(SimCode simCode, String guid, Text &header)
     /* Mixed Systems */
     <%simulationFileHeader(simCode)%>
     #include "<%simCode.fileNamePrefix%>_11mix.h"
-    <%functionSetupMixedSystems(initialEquations, parameterEquations, allEquations, jacobianMatrixes, &header, modelNamePrefixStr)%>
+    <%functionSetupMixedSystems(initialEquations, initialEquations_lambda0, parameterEquations, allEquations, jacobianMatrixes, &header, modelNamePrefixStr)%>
 
     <%\n%>
     >>
@@ -835,12 +839,12 @@ template simulationFile(SimCode simCode, String guid, Boolean isModelExchangeFMU
                      MMC_INIT();
                      >>
     let &mainInit += 'omc_alloc_interface.init();'
-    let pminit = if Flags.isSet(Flags.PARMODAUTO) then 'PM_Model_init("<%fileNamePrefix%>", &simulation_data, threadData, functionODE_systems);' else ''
+    let pminit = if Flags.isSet(Flags.PARMODAUTO) then 'PM_Model_init("<%fileNamePrefix%>", &data, threadData, functionODE_systems);' else ''
     let mainBody =
       <<
-      <%symbolName(modelNamePrefixStr,"setupDataStruc")%>(&simulation_data, threadData);
+      <%symbolName(modelNamePrefixStr,"setupDataStruc")%>(&data, threadData);
       <%pminit%>
-      res = _main_SimulationRuntime(argc, argv, &simulation_data, threadData);
+      res = _main_SimulationRuntime(argc, argv, &data, threadData);
       >>
     <<
     /* Main Simulation File */
@@ -863,7 +867,6 @@ template simulationFile(SimCode simCode, String guid, Boolean isModelExchangeFMU
     #if defined(__cplusplus)
     extern "C" {
     #endif
-    int measure_time_flag = <% if profileHtml() then "5" else if profileSome() then "1" else if profileAll() then "2" else "0" %>;
 
     <%functionInput(modelInfo, modelNamePrefixStr)%>
 
@@ -877,6 +880,32 @@ template simulationFile(SimCode simCode, String guid, Boolean isModelExchangeFMU
 
     #ifdef FMU_EXPERIMENTAL
     <% if Flags.isSet(Flags.FMU_EXPERIMENTAL) then functionODEPartial(odeEquations,(match simulationSettingsOpt case SOME(settings as SIMULATION_SETTINGS(__)) then settings.method else ""), hpcomData.schedules, modelNamePrefixStr, modelInfo)%>
+    <% if Flags.isSet(Flags.FMU_EXPERIMENTAL) then
+    <<
+    void <%symbolName(modelNamePrefixStr,"functionFMIJacobian")%>(DATA *data, threadData_t *threadData, const unsigned *unknown, int nUnk, const unsigned *ders, int nKnown, double *dvKnown, double *out) {
+        int i;
+        /* TODO: Use the literal names instead of the data-> structure
+         * Beware! This code assumes that the FMI variables are sorted putting
+         * states first (0 to nStates-1) and state derivatives (nStates to 2*nStates-1) second. */
+        for (i=0;i<data->modelData->nStates; i++) {
+          // Clear out the seeds
+          data->simulationInfo->analyticJacobians[0].seedVars[i]=0;
+        }
+        for (i=0;i<nUnk; i++) {
+          /* Put the supplied value in the seeds */
+          data->simulationInfo->analyticJacobians[0].seedVars[unknown[i]]=dvKnown[i];
+        }
+        /* Call the Jacobian evaluation function. This function evaluates the whole column of the Jacobian.
+         * More efficient code could only evaluate the equations needed for the
+         * known variables only */
+        <%symbolName(modelNamePrefixStr,"functionJacA_column")%>(data,threadData);
+
+        // Write the results back to the array
+        for (i=0;i<nKnown; i++) {
+          out[ders[i]-data->modelData->nStates] = data->simulationInfo->analyticJacobians[0].resultVars[ders[i]-data->modelData->nStates];
+        }
+    }
+    >> %>
     #endif
     /* forward the main in the simulation runtime */
     extern int _main_SimulationRuntime(int argc, char**argv, DATA *data, threadData_t *threadData);
@@ -905,6 +934,7 @@ template simulationFile(SimCode simCode, String guid, Boolean isModelExchangeFMU
        <%symbolName(modelNamePrefixStr,"updateBoundVariableAttributes")%>,
        <%boolStrC(useHomotopy)%> /* useHomotopy */,
        <%symbolName(modelNamePrefixStr,"functionInitialEquations")%>,
+       <%symbolName(modelNamePrefixStr,"functionInitialEquations_lambda0")%>,
        <%symbolName(modelNamePrefixStr,"functionRemovedInitialEquations")%>,
        <%symbolName(modelNamePrefixStr,"updateBoundParameters")%>,
        <%symbolName(modelNamePrefixStr,"checkForAsserts")%>,
@@ -936,15 +966,17 @@ template simulationFile(SimCode simCode, String guid, Boolean isModelExchangeFMU
        <%symbolName(modelNamePrefixStr,"symEulerUpdate")%>,
        <%symbolName(modelNamePrefixStr,"function_initSynchronous")%>,
        <%symbolName(modelNamePrefixStr,"function_updateSynchronous")%>,
-       <%symbolName(modelNamePrefixStr,"function_equationsSynchronous")%>
+       <%symbolName(modelNamePrefixStr,"function_equationsSynchronous")%>,
+       <% if isModelExchangeFMU then symbolName(modelNamePrefixStr,"read_input_fmu") else "NULL" %>
        #ifdef FMU_EXPERIMENTAL
        ,<%symbolName(modelNamePrefixStr,"functionODE_Partial")%>
+       ,<%symbolName(modelNamePrefixStr,"functionFMIJacobian")%>
        #endif
 
     <%\n%>
     };
 
-    <%functionInitializeDataStruc(modelInfo, fileNamePrefix, guid, allEquations, jacobianMatrixes, delayedExps, modelNamePrefixStr)%>
+    <%functionInitializeDataStruc(modelInfo, fileNamePrefix, guid, allEquations, jacobianMatrixes, delayedExps, modelNamePrefixStr, isModelExchangeFMU)%>
 
     #ifdef __cplusplus
     }
@@ -967,7 +999,12 @@ template simulationFile(SimCode simCode, String guid, Boolean isModelExchangeFMU
     int main(int argc, char**argv)
     {
       int res;
-      DATA simulation_data;
+      DATA data;
+      MODEL_DATA modelData;
+      SIMULATION_INFO simInfo;
+      data.modelData = &modelData;
+      data.simulationInfo = &simInfo;
+      measure_time_flag = <% if profileHtml() then "5" else if profileSome() then "1" else if profileAll() then "2" else "0" /* Would be good if this was not a global variable...*/ %>;
       <%mainInit%>
       <%mainTop(mainBody,"https://trac.openmodelica.org/OpenModelica/newticket")%>
 
@@ -996,7 +1033,7 @@ template simulationFileHeader(SimCode simCode)
     #include "openmodelica.h"
     #include "openmodelica_func.h"
     #include "simulation_data.h"
-    #include "simulation/simulation_info_xml.h"
+    #include "simulation/simulation_info_json.h"
     #include "simulation/simulation_runtime.h"
     #include "util/omc_error.h"
     #include "simulation/solver/model_help.h"
@@ -1005,7 +1042,6 @@ template simulationFileHeader(SimCode simCode)
     #include "simulation/solver/nonlinearSystem.h"
     #include "simulation/solver/mixedSystem.h"
 
-    #include <assert.h>
     #include <string.h>
 
     #include "<%fileNamePrefix%>_functions.h"
@@ -1031,76 +1067,86 @@ template simulationFileHeader(SimCode simCode)
   end match
 end simulationFileHeader;
 
-template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String guid, list<SimEqSystem> allEquations, list<SimCode.JacobianMatrix> symJacs, DelayedExpression delayed)
+template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String guid, list<SimEqSystem> allEquations, list<SimCode.JacobianMatrix> symJacs, DelayedExpression delayed, Boolean isModelExchangeFMU)
   "Generates information for data.modelInfo struct."
 ::=
   match modelInfo
   case MODELINFO(varInfo=VARINFO(__)) then
     <<
-    data->modelData.modelName = "<%dotPath(name)%>";
-    data->modelData.modelFilePrefix = "<%fileNamePrefix%>";
-    data->modelData.resultFileName = NULL;
-    data->modelData.modelDir = "<%directory%>";
-    data->modelData.modelGUID = "{<%guid%>}";
-    #ifdef OPENMODELICA_XML_FROM_FILE_AT_RUNTIME
-    data->modelData.initXMLData = NULL;
-    data->modelData.modelDataXml.infoXMLData = NULL;
+    data->modelData->modelName = "<%dotPath(name)%>";
+    data->modelData->modelFilePrefix = "<%fileNamePrefix%>";
+    data->modelData->resultFileName = NULL;
+    data->modelData->modelDir = "<%directory%>";
+    data->modelData->modelGUID = "{<%guid%>}";
+    <% if isModelExchangeFMU then
+    <<
+    data->modelData->initXMLData = NULL;
+    data->modelData->modelDataXml.infoXMLData =
+    #include "<%fileNamePrefix%>_info.c"
+    ;
+    >>
+    else
+    <<
+    #if defined(OPENMODELICA_XML_FROM_FILE_AT_RUNTIME)
+    data->modelData->initXMLData = NULL;
+    data->modelData->modelDataXml.infoXMLData = NULL;
     #else
-    data->modelData.initXMLData =
+    data->modelData->initXMLData =
     #include "<%fileNamePrefix%>_init.c"
     ;
-    data->modelData.modelDataXml.infoXMLData =
+    data->modelData->modelDataXml.infoXMLData =
     #include "<%fileNamePrefix%>_info.c"
     ;
     #endif
+    >>
+    %>
 
-    data->modelData.nStates = <%varInfo.numStateVars%>;
-    data->modelData.nVariablesReal = 2*<%varInfo.numStateVars%>+<%varInfo.numAlgVars%>+<%varInfo.numDiscreteReal%>+<%varInfo.numOptimizeConstraints%> + <%varInfo.numOptimizeFinalConstraints%>;
-    data->modelData.nDiscreteReal = <%varInfo.numDiscreteReal%>;
-    data->modelData.nVariablesInteger = <%varInfo.numIntAlgVars%>;
-    data->modelData.nVariablesBoolean = <%varInfo.numBoolAlgVars%>;
-    data->modelData.nVariablesString = <%varInfo.numStringAlgVars%>;
-    data->modelData.nParametersReal = <%varInfo.numParams%>;
-    data->modelData.nParametersInteger = <%varInfo.numIntParams%>;
-    data->modelData.nParametersBoolean = <%varInfo.numBoolParams%>;
-    data->modelData.nParametersString = <%varInfo.numStringParamVars%>;
-    data->modelData.nInputVars = <%varInfo.numInVars%>;
-    data->modelData.nOutputVars = <%varInfo.numOutVars%>;
+    data->modelData->nStates = <%varInfo.numStateVars%>;
+    data->modelData->nVariablesReal = 2*<%varInfo.numStateVars%>+<%varInfo.numAlgVars%>+<%varInfo.numDiscreteReal%>+<%varInfo.numOptimizeConstraints%> + <%varInfo.numOptimizeFinalConstraints%>;
+    data->modelData->nDiscreteReal = <%varInfo.numDiscreteReal%>;
+    data->modelData->nVariablesInteger = <%varInfo.numIntAlgVars%>;
+    data->modelData->nVariablesBoolean = <%varInfo.numBoolAlgVars%>;
+    data->modelData->nVariablesString = <%varInfo.numStringAlgVars%>;
+    data->modelData->nParametersReal = <%varInfo.numParams%>;
+    data->modelData->nParametersInteger = <%varInfo.numIntParams%>;
+    data->modelData->nParametersBoolean = <%varInfo.numBoolParams%>;
+    data->modelData->nParametersString = <%varInfo.numStringParamVars%>;
+    data->modelData->nInputVars = <%varInfo.numInVars%>;
+    data->modelData->nOutputVars = <%varInfo.numOutVars%>;
 
-    data->modelData.nAliasReal = <%varInfo.numAlgAliasVars%>;
-    data->modelData.nAliasInteger = <%varInfo.numIntAliasVars%>;
-    data->modelData.nAliasBoolean = <%varInfo.numBoolAliasVars%>;
-    data->modelData.nAliasString = <%varInfo.numStringAliasVars%>;
+    data->modelData->nAliasReal = <%varInfo.numAlgAliasVars%>;
+    data->modelData->nAliasInteger = <%varInfo.numIntAliasVars%>;
+    data->modelData->nAliasBoolean = <%varInfo.numBoolAliasVars%>;
+    data->modelData->nAliasString = <%varInfo.numStringAliasVars%>;
 
-    data->modelData.nZeroCrossings = <%varInfo.numZeroCrossings%>;
-    data->modelData.nSamples = <%varInfo.numTimeEvents%>;
-    data->modelData.nRelations = <%varInfo.numRelations%>;
-    data->modelData.nMathEvents = <%varInfo.numMathEventFunctions%>;
-    data->modelData.nExtObjs = <%varInfo.numExternalObjects%>;
-    setupModelInfoFunctions(<%if Flags.isSet(Flags.MODEL_INFO_JSON) then 1 else 0%>);
-    data->modelData.modelDataXml.fileName = "<%fileNamePrefix%>_info.<%if Flags.isSet(Flags.MODEL_INFO_JSON) then "json" else "xml"%>";
-    data->modelData.modelDataXml.modelInfoXmlLength = 0;
-    data->modelData.modelDataXml.nFunctions = <%listLength(functions)%>;
-    data->modelData.modelDataXml.nProfileBlocks = 0;
-    data->modelData.modelDataXml.nEquations = <%varInfo.numEquations%>;
-    data->modelData.nMixedSystems = <%varInfo.numMixedSystems%>;
-    data->modelData.nLinearSystems = <%varInfo.numLinearSystems%>;
-    data->modelData.nNonLinearSystems = <%varInfo.numNonLinearSystems%>;
-    data->modelData.nStateSets = <%varInfo.numStateSets%>;
-    data->modelData.nJacobians = <%varInfo.numJacobians%>;
-    data->modelData.nOptimizeConstraints = <%varInfo.numOptimizeConstraints%>;
-    data->modelData.nOptimizeFinalConstraints = <%varInfo.numOptimizeFinalConstraints%>;
+    data->modelData->nZeroCrossings = <%varInfo.numZeroCrossings%>;
+    data->modelData->nSamples = <%varInfo.numTimeEvents%>;
+    data->modelData->nRelations = <%varInfo.numRelations%>;
+    data->modelData->nMathEvents = <%varInfo.numMathEventFunctions%>;
+    data->modelData->nExtObjs = <%varInfo.numExternalObjects%>;
+    data->modelData->modelDataXml.fileName = "<%fileNamePrefix%>_info.<%if Flags.isSet(Flags.MODEL_INFO_JSON) then "json" else "xml"%>";
+    data->modelData->modelDataXml.modelInfoXmlLength = 0;
+    data->modelData->modelDataXml.nFunctions = <%listLength(functions)%>;
+    data->modelData->modelDataXml.nProfileBlocks = 0;
+    data->modelData->modelDataXml.nEquations = <%varInfo.numEquations%>;
+    data->modelData->nMixedSystems = <%varInfo.numMixedSystems%>;
+    data->modelData->nLinearSystems = <%varInfo.numLinearSystems%>;
+    data->modelData->nNonLinearSystems = <%varInfo.numNonLinearSystems%>;
+    data->modelData->nStateSets = <%varInfo.numStateSets%>;
+    data->modelData->nJacobians = <%varInfo.numJacobians%>;
+    data->modelData->nOptimizeConstraints = <%varInfo.numOptimizeConstraints%>;
+    data->modelData->nOptimizeFinalConstraints = <%varInfo.numOptimizeFinalConstraints%>;
 
-    data->modelData.nDelayExpressions = <%match delayed case DELAYED_EXPRESSIONS(__) then maxDelayedIndex%>;
+    data->modelData->nDelayExpressions = <%match delayed case DELAYED_EXPRESSIONS(__) then maxDelayedIndex%>;
 
-    data->modelData.nClocks = <%nClocks%>;
-    data->modelData.nSubClocks = <%nSubClocks%>;
+    data->modelData->nClocks = <%nClocks%>;
+    data->modelData->nSubClocks = <%nSubClocks%>;
 
     >>
   end match
 end populateModelInfo;
 
-template functionInitializeDataStruc(ModelInfo modelInfo, String fileNamePrefix, String guid, list<SimEqSystem> allEquations, list<SimCode.JacobianMatrix> symJacs, DelayedExpression delayed, String modelNamePrefix)
+template functionInitializeDataStruc(ModelInfo modelInfo, String fileNamePrefix, String guid, list<SimEqSystem> allEquations, list<SimCode.JacobianMatrix> symJacs, DelayedExpression delayed, String modelNamePrefix, Boolean isModelExchangeFMU)
   "Generates function in simulation file."
 ::=
   <<
@@ -1108,7 +1154,7 @@ template functionInitializeDataStruc(ModelInfo modelInfo, String fileNamePrefix,
   {
     assertStreamPrint(threadData,0!=data, "Error while initialize Data");
     data->callback = &<%symbolName(modelNamePrefix,"callback")%>;
-    <%populateModelInfo(modelInfo, fileNamePrefix, guid, allEquations, symJacs, delayed)%>
+    <%populateModelInfo(modelInfo, fileNamePrefix, guid, allEquations, symJacs, delayed, isModelExchangeFMU)%>
   }
   >>
 end functionInitializeDataStruc;
@@ -1118,32 +1164,32 @@ template functionSimProfDef(SimEqSystem eq, Integer value, Text &reverseProf)
 ::=
   match eq
   case SES_MIXED(__) then
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%index%>;<%\n%>'
     <<
     #define SIM_PROF_EQ_<%index%> <%value%><%\n%>
     >>
   // no dynamic tearing
   case SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing=NONE()) then
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%ls.index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%ls.index%>;<%\n%>'
     <<
     #define SIM_PROF_EQ_<%ls.index%> <%value%><%\n%>
     >>
   case SES_NONLINEAR(nlSystem=nls as NONLINEARSYSTEM(__), alternativeTearing=NONE()) then
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%nls.index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%nls.index%>;<%\n%>'
     <<
     #define SIM_PROF_EQ_<%nls.index%> <%value%><%\n%>
     >>
   // dynamic tearing
   case SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing = SOME(at as LINEARSYSTEM(__))) then
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%ls.index%>;<%\n%>'
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%at.index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%ls.index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%at.index%>;<%\n%>'
     <<
     #define SIM_PROF_EQ_<%ls.index%> <%value%><%\n%>
     #define SIM_PROF_EQ_<%at.index%> <%value%><%\n%>
     >>
   case SES_NONLINEAR(nlSystem=nls as NONLINEARSYSTEM(__), alternativeTearing = SOME(at as NONLINEARSYSTEM(__))) then
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%nls.index%>;<%\n%>'
-    let &reverseProf += 'data->modelData.equationInfo_reverse_prof_index[<%value%>] = <%at.index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%nls.index%>;<%\n%>'
+    let &reverseProf += 'data->modelData->equationInfo_reverse_prof_index[<%value%>] = <%at.index%>;<%\n%>'
     <<
     #define SIM_PROF_EQ_<%nls.index%> <%value%><%\n%>
     #define SIM_PROF_EQ_<%at.index%> <%value%><%\n%>
@@ -1231,7 +1277,7 @@ template variableDefinitions(ModelInfo modelInfo, list<BackendDAE.TimeEvent> tim
       /* sample */
       <%(timeEvents |> timeEvent =>
         match timeEvent
-          case SAMPLE_TIME_EVENT(__) then '#define $P$sample<%index%> data->simulationInfo.samples[<%intSub(index, 1)%>]'
+          case SAMPLE_TIME_EVENT(__) then '#define $P$sample<%index%> data->simulationInfo->samples[<%intSub(index, 1)%>]'
           else ''
         ;separator="\n")%>
 
@@ -1247,26 +1293,26 @@ template globalDataParDefine(SimVar simVar, String arrayName)
   case SIMVAR(arrayCref=SOME(c),aliasvar=NOALIAS()) then
     <<
     /* <%crefStrNoUnderscore(c)%> */
-    #define <%cref(c)%> data->simulationInfo.<%arrayName%>[<%index%>]
+    #define <%cref(c)%> data->simulationInfo-><%arrayName%>[<%index%>]
 
     <%crefMacroSubsAtEndParNew(c)%>
 
     /* <%crefStrNoUnderscore(name)%> */
-    #define <%cref(name)%> data->simulationInfo.<%arrayName%>[<%index%>]
-    #define $P$ATTRIBUTE<%cref(name)%> data->modelData.<%arrayName%>Data[<%index%>].attribute
+    #define <%cref(name)%> data->simulationInfo-><%arrayName%>[<%index%>]
+    #define $P$ATTRIBUTE<%cref(name)%> data->modelData-><%arrayName%>Data[<%index%>].attribute
     #define $P$ATTRIBUTE$P$PRE<%cref(name)%> $P$ATTRIBUTE<%cref(name)%>
     #define _<%cref(name)%>(i) <%cref(name)%>
-    #define <%cref(name)%>__varInfo data->modelData.<%arrayName%>Data[<%index%>].info
+    #define <%cref(name)%>__varInfo data->modelData-><%arrayName%>Data[<%index%>].info
 
     >>
   case SIMVAR(aliasvar=NOALIAS()) then
     <<
     /* <%crefStrNoUnderscore(name)%> */
-    #define <%cref(name)%> data->simulationInfo.<%arrayName%>[<%index%>]
+    #define <%cref(name)%> data->simulationInfo-><%arrayName%>[<%index%>]
     #define _<%cref(name)%>(i) <%cref(name)%>
-    #define $P$ATTRIBUTE<%cref(name)%> data->modelData.<%arrayName%>Data[<%index%>].attribute
+    #define $P$ATTRIBUTE<%cref(name)%> data->modelData-><%arrayName%>Data[<%index%>].attribute
     #define $P$ATTRIBUTE$P$PRE<%cref(name)%> $P$ATTRIBUTE<%cref(name)%>
-    #define <%cref(name)%>__varInfo data->modelData.<%arrayName%>Data[<%index%>].info
+    #define <%cref(name)%>__varInfo data->modelData-><%arrayName%>Data[<%index%>].info
 
     >>
   end match
@@ -1282,18 +1328,18 @@ template globalDataVarDefine(SimVar simVar, String arrayName, Integer offset) "t
     /* <%crefStrNoUnderscore(c)%> */
     #define _<%cref(c)%>(i) data->localData[i]-><%arrayName%>[<%intAdd(offset,index)%>]
     #define <%cref(c)%> _<%cref(c)%>(0)
-    #define $P$PRE<%cref(c)%> data->simulationInfo.<%arrayName%>Pre[<%intAdd(offset,index)%>]
+    #define $P$PRE<%cref(c)%> data->simulationInfo-><%arrayName%>Pre[<%intAdd(offset,index)%>]
 
     <%crefMacroSubsAtEndVarNew(c)%>
 
     /* <%crefStrNoUnderscore(name)%> */
     #define _<%cref(name)%>(i) data->localData[i]-><%arrayName%>[<%intAdd(offset,index)%>]
     #define <%cref(name)%> _<%cref(name)%>(0)
-    #define $P$PRE<%cref(name)%> data->simulationInfo.<%arrayName%>Pre[<%intAdd(offset,index)%>]
-    #define $P$ATTRIBUTE<%cref(name)%> data->modelData.<%arrayName%>Data[<%intAdd(offset,index)%>].attribute
+    #define $P$PRE<%cref(name)%> data->simulationInfo-><%arrayName%>Pre[<%intAdd(offset,index)%>]
+    #define $P$ATTRIBUTE<%cref(name)%> data->modelData-><%arrayName%>Data[<%intAdd(offset,index)%>].attribute
     #define $P$ATTRIBUTE$P$PRE<%cref(name)%> $P$ATTRIBUTE<%cref(name)%>
-    #define <%cref(name)%>__varInfo data->modelData.<%arrayName%>Data[<%intAdd(offset,index)%>].info
-    #define $P$PRE<%cref(name)%>__varInfo data->modelData.<%arrayName%>Data[<%intAdd(offset,index)%>].info
+    #define <%cref(name)%>__varInfo data->modelData-><%arrayName%>Data[<%intAdd(offset,index)%>].info
+    #define $P$PRE<%cref(name)%>__varInfo data->modelData-><%arrayName%>Data[<%intAdd(offset,index)%>].info
 
     >>
   case SIMVAR(aliasvar=NOALIAS()) then
@@ -1302,11 +1348,11 @@ template globalDataVarDefine(SimVar simVar, String arrayName, Integer offset) "t
     /* <%crefStrNoUnderscore(name)%> */
     #define _<%cref(name)%>(i) data->localData[i]-><%arrayName%>[<%intAdd(offset,index)%>]
     #define <%cref(name)%> _<%cref(name)%>(0)
-    #define $P$PRE<%cref(name)%> data->simulationInfo.<%arrayName%>Pre[<%intAdd(offset,index)%>]
-    #define $P$ATTRIBUTE<%cref(name)%> data->modelData.<%arrayName%>Data[<%intAdd(offset,index)%>].attribute
+    #define $P$PRE<%cref(name)%> data->simulationInfo-><%arrayName%>Pre[<%intAdd(offset,index)%>]
+    #define $P$ATTRIBUTE<%cref(name)%> data->modelData-><%arrayName%>Data[<%intAdd(offset,index)%>].attribute
     #define $P$ATTRIBUTE$P$PRE<%cref(name)%> $P$ATTRIBUTE<%cref(name)%>
-    #define <%cref(name)%>__varInfo data->modelData.<%arrayName%>Data[<%intAdd(offset,index)%>].info
-    #define $P$PRE<%cref(name)%>__varInfo data->modelData.<%arrayName%>Data[<%intAdd(offset,index)%>].info
+    #define <%cref(name)%>__varInfo data->modelData-><%arrayName%>Data[<%intAdd(offset,index)%>].info
+    #define $P$PRE<%cref(name)%>__varInfo data->modelData-><%arrayName%>Data[<%intAdd(offset,index)%>].info
     #define _$P$PRE<%cref(name)%>(i) $P$PRE<%cref(name)%>
 
     >>
@@ -1415,7 +1461,7 @@ template jacobianVarDefine(SimVar simVar, String array, Integer indexJac, Intege
       let optDefineLangrangeB = if stringEq('<%crefName%>', '$P<%BackendDAE.optimizationLagrangeTermName%>$P$pDERB$PdummyVarB') then "\n"+'#define <%crefName%>$indexdiffed <%index%>' else ''
       let optDefineLangrangeC = if stringEq('<%crefName%>', '$P<%BackendDAE.optimizationLagrangeTermName%>$P$pDERC$PdummyVarC') then "\n"+'#define <%crefName%>$indexdiffed <%index%>' else ''
         <<
-        #define _<%crefName%>(i) data->simulationInfo.analyticJacobians[<%indexJac%>].<%arrayName%>
+        #define _<%crefName%>(i) data->simulationInfo->analyticJacobians[<%indexJac%>].<%arrayName%>
         #define <%crefName%> _<%crefName%>(0)
         #define <%crefName%>__varInfo dummyVAR_INFO
         #define $P$ATTRIBUTE<%crefName%> dummyREAL_ATTRIBUTE<%optDefineMayer%><%optDefineLangrangeB%><%optDefineLangrangeC%>
@@ -1427,7 +1473,7 @@ template jacobianVarDefine(SimVar simVar, String array, Integer indexJac, Intege
       let tmp = System.tmpTick()
       let crefName = cref(name)
       <<
-      #define <%crefName%> data->simulationInfo.analyticJacobians[<%indexJac%>].seedVars[<%index0%>]
+      #define <%crefName%> data->simulationInfo->analyticJacobians[<%indexJac%>].seedVars[<%index0%>]
       #define <%crefName%>__varInfo dummyVAR_INFO
       >>
     end match
@@ -1478,7 +1524,7 @@ template functionCallExternalObjectConstructors(ExtObjInfo extObjInfo, String mo
     void <%symbolName(modelNamePrefix,"callExternalObjectConstructors")%>(DATA *data, threadData_t *threadData)
     {
       <%varDecls%>
-      /* data->simulationInfo.extObjs = NULL; */
+      /* data->simulationInfo->extObjs = NULL; */
       infoStreamPrint(LOG_DEBUG, 0, "call external Object Constructors");
       <%ctorCalls%>
       <%aliases |> (var1, var2) => '<%cref(var1)%> = <%cref(var2)%>;' ;separator="\n"%>
@@ -1496,11 +1542,11 @@ template functionCallExternalObjectDestructors(ExtObjInfo extObjInfo, String mod
     <<
     void <%symbolName(modelNamePrefix,"callExternalObjectDestructors")%>(DATA *data, threadData_t *threadData)
     {
-      if(data->simulationInfo.extObjs)
+      if(data->simulationInfo->extObjs)
       {
         <%extObjInfo.vars |> var as SIMVAR(varKind=ext as EXTOBJ(__)) => 'omc_<%underscorePath(ext.fullClassName)%>_destructor(threadData,<%cref(var.name)%>);' ;separator="\n"%>
-        free(data->simulationInfo.extObjs);
-        data->simulationInfo.extObjs = 0;
+        free(data->simulationInfo->extObjs);
+        data->simulationInfo->extObjs = 0;
       }
     }
     >>
@@ -1518,7 +1564,7 @@ template functionInput(ModelInfo modelInfo, String modelNamePrefix)
       TRACE_PUSH
 
       <%vars.inputVars |> SIMVAR(__) hasindex i0 =>
-        '<%cref(name)%> = data->simulationInfo.inputVars[<%i0%>];'
+        '<%cref(name)%> = data->simulationInfo->inputVars[<%i0%>];'
         ;separator="\n"
       %>
 
@@ -1531,7 +1577,7 @@ template functionInput(ModelInfo modelInfo, String modelNamePrefix)
       TRACE_PUSH
 
       <%vars.inputVars |> SIMVAR(__) hasindex i0 =>
-        'data->simulationInfo.inputVars[<%i0%>] = $P$ATTRIBUTE<%cref(name)%>.start;'
+        'data->simulationInfo->inputVars[<%i0%>] = $P$ATTRIBUTE<%cref(name)%>.start;'
         ;separator="\n"
       %>
 
@@ -1544,7 +1590,7 @@ template functionInput(ModelInfo modelInfo, String modelNamePrefix)
       TRACE_PUSH
 
       <%vars.inputVars |> SIMVAR(__) hasindex i0 =>
-        '$P$ATTRIBUTE<%cref(name)%>.start = data->simulationInfo.inputVars[<%i0%>];'
+        '$P$ATTRIBUTE<%cref(name)%>.start = data->simulationInfo->inputVars[<%i0%>];'
         ;separator="\n"
       %>
 
@@ -1589,7 +1635,7 @@ template functionOutput(ModelInfo modelInfo, String modelNamePrefix)
       TRACE_PUSH
 
       <%vars.outputVars |> SIMVAR(__) hasindex i0 =>
-        'data->simulationInfo.outputVars[<%i0%>] = <%cref(name)%>;'
+        'data->simulationInfo->outputVars[<%i0%>] = <%cref(name)%>;'
         ;separator="\n"
       %>
 
@@ -1614,10 +1660,10 @@ template functionInitSample(list<BackendDAE.TimeEvent> timeEvents, String modelN
           <<
           <%preExp%>
           /* $P$sample<%index%> */
-          data->modelData.samplesInfo[i].index = <%index%>;
-          data->modelData.samplesInfo[i].start = <%e1%>;
-          data->modelData.samplesInfo[i].interval = <%e2%>;
-          assertStreamPrint(threadData,data->modelData.samplesInfo[i].interval > 0.0, "sample-interval <= 0.0");
+          data->modelData->samplesInfo[i].index = <%index%>;
+          data->modelData->samplesInfo[i].start = <%e1%>;
+          data->modelData->samplesInfo[i].interval = <%e2%>;
+          assertStreamPrint(threadData,data->modelData->samplesInfo[i].interval > 0.0, "sample-interval <= 0.0");
           i++;
           >>
         else '')
@@ -1638,10 +1684,11 @@ template functionInitSample(list<BackendDAE.TimeEvent> timeEvents, String modelN
 end functionInitSample;
 
 
-template functionInitialMixedSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
+template functionInitialMixedSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> initialEquations_lambda0, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
   "Generates functions in simulation file."
 ::=
   let initbody = functionInitialMixedSystemsTemp(initialEquations)
+  let initbody_lambda0 = functionInitialMixedSystemsTemp(initialEquations_lambda0)
   let parambody = functionInitialMixedSystemsTemp(parameterEquations)
   let body = functionInitialMixedSystemsTemp(allEquations)
   let jacobianbody = (jacobianMatrixes |> ({(jacobianEquations,_,_)}, _, _, _, _, _, _) => functionInitialMixedSystemsTemp(jacobianEquations) ;separator="\n\n")
@@ -1651,6 +1698,8 @@ template functionInitialMixedSystems(list<SimEqSystem> initialEquations, list<Si
   {
     /* initial mixed systems */
     <%initbody%>
+    /* initial_lambda0 mixed systems */
+    <%initbody_lambda0%>
     /* parameter mixed systems */
     <%parambody%>
     /* model mixed systems */
@@ -1679,16 +1728,19 @@ template functionInitialMixedSystemsTemp(list<SimEqSystem> allEquations)
 end functionInitialMixedSystemsTemp;
 
 
-template functionSetupMixedSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, Text &header, String modelNamePrefixStr)
+template functionSetupMixedSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> initialEquations_lambda0, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, Text &header, String modelNamePrefixStr)
   "Generates functions in simulation file."
 ::=
-  let initbody = functionSetupMixedSystemsTemp(initialEquations,&header,modelNamePrefixStr)
+  let initbody = functionSetupMixedSystemsTemp(initialEquations, &header,modelNamePrefixStr)
+  let initbody_lambda0 = functionSetupMixedSystemsTemp(initialEquations_lambda0, &header,modelNamePrefixStr)
   let parambody = functionSetupMixedSystemsTemp(parameterEquations,&header,modelNamePrefixStr)
   let body = functionSetupMixedSystemsTemp(allEquations,&header,modelNamePrefixStr)
   let jacobianbody = (jacobianMatrixes |> ({(jacobianEquations,_,_)}, _, _, _, _, _, _) => functionSetupMixedSystemsTemp(jacobianEquations,&header,modelNamePrefixStr);separator="\n\n")
   <<
   /* initial mixed systems */
   <%initbody%>
+  /* initial_lambda0 mixed systems */
+  <%initbody_lambda0%>
   /* parameter mixed systems */
   <%parambody%>
   /* model mixed systems */
@@ -1708,19 +1760,19 @@ template functionSetupMixedSystemsTemp(list<SimEqSystem> allEquations, Text &hea
          match cont
            // no dynamic tearing
            case SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing=NONE()) then
-             'data->simulationInfo.linearSystemData[<%ls.indexLinearSystem%>].solved'
+             'data->simulationInfo->linearSystemData[<%ls.indexLinearSystem%>].solved'
            case SES_NONLINEAR(nlSystem=nls as NONLINEARSYSTEM(__), alternativeTearing=NONE()) then
-             'data->simulationInfo.nonlinearSystemData[<%nls.indexNonLinearSystem%>].solved'
+             'data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].solved'
            // dynamic tearing
            case SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing = SOME(at as LINEARSYSTEM(__))) then
              <<
-               data->simulationInfo.linearSystemData[<%ls.indexLinearSystem%>].solved'
-               data->simulationInfo.linearSystemData[<%at.indexLinearSystem%>].solved'
+               data->simulationInfo->linearSystemData[<%ls.indexLinearSystem%>].solved'
+               data->simulationInfo->linearSystemData[<%at.indexLinearSystem%>].solved'
              >>
            case SES_NONLINEAR(nlSystem=nls as NONLINEARSYSTEM(__), alternativeTearing = SOME(at as NONLINEARSYSTEM(__))) then
              <<
-               data->simulationInfo.nonlinearSystemData[<%nls.indexNonLinearSystem%>].solved
-               data->simulationInfo.nonlinearSystemData[<%at.indexNonLinearSystem%>].solved
+               data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].solved
+               data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].solved
              >>
        let &preDisc = buffer ""
        let &varDecls = buffer ""
@@ -1738,7 +1790,7 @@ template functionSetupMixedSystemsTemp(list<SimEqSystem> allEquations, Text &hea
        {
          DATA* data = (DATA*) inData;
          <%symbolName(modelNamePrefixStr,"eqFunction")%>_<%contEqsIndex%>(data, threadData);
-         data->simulationInfo.mixedSystemData[<%indexMixedSystem%>].continuous_solution = <%solvedContinuous%>;
+         data->simulationInfo->mixedSystemData[<%indexMixedSystem%>].continuous_solution = <%solvedContinuous%>;
        }
 
        void updateIterationExpMixedSystem<%index%>(void *inData)
@@ -1755,10 +1807,11 @@ template functionSetupMixedSystemsTemp(list<SimEqSystem> allEquations, Text &hea
 end functionSetupMixedSystemsTemp;
 
 
-template functionInitialLinearSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
+template functionInitialLinearSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> initialEquations_lambda0, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
   "Generates functions in simulation file."
 ::=
   let initbody = functionInitialLinearSystemsTemp(initialEquations, modelNamePrefix)
+  let initbody_lambda0 = functionInitialLinearSystemsTemp(initialEquations_lambda0, modelNamePrefix)
   let parambody = functionInitialLinearSystemsTemp(parameterEquations, modelNamePrefix)
   let body = functionInitialLinearSystemsTemp(allEquations, modelNamePrefix)
   let jacobianbody = (jacobianMatrixes |> ({(jacobianEquations,_,_)}, _, _, _, _, _, _) => functionInitialLinearSystemsTemp(jacobianEquations, modelNamePrefix);separator="\n\n")
@@ -1768,6 +1821,8 @@ template functionInitialLinearSystems(list<SimEqSystem> initialEquations, list<S
   {
     /* initial linear systems */
     <%initbody%>
+    /* initial_lambda0 linear systems */
+    <%initbody_lambda0%>
     /* parameter linear systems */
     <%parambody%>
     /* model linear systems */
@@ -1897,16 +1952,19 @@ template functionInitialLinearSystemsTemp(list<SimEqSystem> allEquations, String
    ;separator="\n\n")
 end functionInitialLinearSystemsTemp;
 
-template functionSetupLinearSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
+template functionSetupLinearSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> initialEquations_lambda0, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
   "Generates functions in simulation file."
 ::=
   let initbody = functionSetupLinearSystemsTemp(initialEquations, modelNamePrefix)
+  let initbody_lambda0 = functionSetupLinearSystemsTemp(initialEquations_lambda0, modelNamePrefix)
   let parambody = functionSetupLinearSystemsTemp(parameterEquations, modelNamePrefix)
   let body = functionSetupLinearSystemsTemp(allEquations, modelNamePrefix)
   let jacobianbody = (jacobianMatrixes |> ({(jacobianEquations,_,_)}, _, _, _, _, _, _) => functionSetupLinearSystemsTemp(jacobianEquations, modelNamePrefix);separator="\n\n")
   <<
   /* initial linear systems */
   <%initbody%>
+  /* initial_lambda0 linear systems */
+  <%initbody_lambda0%>
   /* parameter linear systems */
   <%parambody%>
   /* model linear systems */
@@ -1959,7 +2017,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
          const int equationIndexes[2] = {1,<%ls.index%>};
          <%varDeclsRes%>
          <% if profileAll() then 'SIM_PROF_TICK_EQ(<%ls.index%>);' %>
-         <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%ls.index%>).profileBlockIndex,1);' %>
+         <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%ls.index%>).profileBlockIndex,1);' %>
          <%xlocs%>
          <%prebody%>
          <%body%>
@@ -2087,7 +2145,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
          const int equationIndexes[2] = {1,<%ls.index%>};
          <%varDeclsRes%>
          <% if profileAll() then 'SIM_PROF_TICK_EQ(<%ls.index%>);' %>
-         <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%ls.index%>).profileBlockIndex,1);' %>
+         <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%ls.index%>).profileBlockIndex,1);' %>
          <%xlocs%>
          <%prebody%>
          <%body%>
@@ -2111,7 +2169,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
          const int equationIndexes[2] = {1,<%at.index%>};
          <%varDeclsRes2%>
          <% if profileAll() then 'SIM_PROF_TICK_EQ(<%at.index%>);' %>
-         <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex,1);' %>
+         <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%at.index%>).profileBlockIndex,1);' %>
          <%xlocs2%>
          <%prebody2%>
          <%body2%>
@@ -2227,12 +2285,13 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
    ;separator="\n\n")
 end functionSetupLinearSystemsTemp;
 
-template functionInitialNonLinearSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
+template functionInitialNonLinearSystems(list<SimEqSystem> initialEquations, list<SimEqSystem> initialEquations_lambda0, list<SimEqSystem> parameterEquations, list<SimEqSystem> allEquations, list<JacobianMatrix> jacobianMatrixes, String modelNamePrefix)
   "Generates functions in simulation file."
 ::=
   let &tempeqns = buffer ""
   let &tempeqns += (allEquations |> eq => match eq case eq as SES_NONLINEAR(alternativeTearing = SOME(__)) then 'int <%symbolName(modelNamePrefix,"eqFunction")%>_<%equationIndex(eq)%>(DATA*, threadData_t*);' ; separator = "\n")
-  let initbody = functionInitialNonLinearSystemsTemp(initialEquations,modelNamePrefix)
+  let initbody = functionInitialNonLinearSystemsTemp(initialEquations, modelNamePrefix)
+  let initbody_lambda0 = functionInitialNonLinearSystemsTemp(initialEquations_lambda0, modelNamePrefix)
   let parambody = functionInitialNonLinearSystemsTemp(parameterEquations,modelNamePrefix)
   let equationbody = functionInitialNonLinearSystemsTemp(allEquations,modelNamePrefix)
   let jacobianbody = (jacobianMatrixes |> ({(jacobianEquations,_,_)}, _, _, _, _, _, _) => functionInitialNonLinearSystemsTemp(jacobianEquations, modelNamePrefix) ;separator="\n\n")
@@ -2243,6 +2302,7 @@ template functionInitialNonLinearSystems(list<SimEqSystem> initialEquations, lis
   void <%symbolName(modelNamePrefix,"initialNonLinearSystem")%>(int nNonLinearSystems, NONLINEAR_SYSTEM_DATA* nonLinearSystemData)
   {
     <%initbody%>
+    <%initbody_lambda0%>
     <%parambody%>
     <%equationbody%>
     <%jacobianbody%>
@@ -2330,7 +2390,7 @@ template functionExtraResidualsPreBody(SimEqSystem eq, Text &varDecls, Text &eqs
   case e as SES_RESIDUAL(__)
   then ""
   else
-  equation_(eq, contextSimulationDiscrete, &varDecls, &eqs, modelNamePrefixStr)
+  equation_(-1, eq, contextSimulationDiscrete, &varDecls, &eqs, modelNamePrefixStr)
   end match
 end functionExtraResidualsPreBody;
 
@@ -2404,7 +2464,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
         const int equationIndexes[2] = {1,<%nls.index%>};
         <%varDecls%>
         <% if profileAll() then 'SIM_PROF_TICK_EQ(<%nls.index%>);' %>
-        <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex,1);' %>
+        <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%nls.index%>).profileBlockIndex,1);' %>
         <%xlocs%>
         <%backupOutputs%>
 
@@ -2486,7 +2546,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
           const int equationIndexes[2] = {1,<%nls.index%>};
           <%varDecls%>
           <% if profileAll() then 'SIM_PROF_TICK_EQ(<%nls.index%>);' %>
-          <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex,1);' %>
+          <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%nls.index%>).profileBlockIndex,1);' %>
           <%xlocs%>
           <%prebody%>
           <%body%>
@@ -2510,7 +2570,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
           const int equationIndexes[2] = {1,<%at.index%>};
           <%varDecls2%>
           <% if profileAll() then 'SIM_PROF_TICK_EQ(<%at.index%>);' %>
-          <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex,1);' %>
+          <% if profileSome() then 'SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%at.index%>).profileBlockIndex,1);' %>
           <%xlocs2%>
           <%prebody2%>
           <%body2%>
@@ -2574,6 +2634,7 @@ end functionInitialStateSets;
 //   - int updateBoundParameters(DATA *data)
 //   - int updateBoundVariableAttributes(DATA *data)
 //   - int functionInitialEquations(DATA *data)
+//   - int functionInitialEquations_lambda0(DATA *data)
 //   - int functionRemovedInitialEquations(DATA *data)
 // =============================================================================
 
@@ -2583,16 +2644,16 @@ template functionUpdateBoundVariableAttributes(list<SimEqSystem> startValueEquat
   let &varDecls = buffer ""
   let &tmp = buffer ""
   let startEqPart = (startValueEquations |> eq as SES_SIMPLE_ASSIGN(__) =>
-      equation_(eq, contextOther, &varDecls, &tmp, modelNamePrefix)
+      equation_(-1, eq, contextOther, &varDecls, &tmp, modelNamePrefix)
     ;separator="\n")
   let nominalEqPart = (nominalValueEquations |> eq as SES_SIMPLE_ASSIGN(__) =>
-      equation_(eq, contextOther, &varDecls, &tmp, modelNamePrefix)
+      equation_(-1, eq, contextOther, &varDecls, &tmp, modelNamePrefix)
     ;separator="\n")
   let minEqPart = (minValueEquations |> eq as SES_SIMPLE_ASSIGN(__) =>
-      equation_(eq, contextOther, &varDecls, &tmp, modelNamePrefix)
+      equation_(-1, eq, contextOther, &varDecls, &tmp, modelNamePrefix)
     ;separator="\n")
   let maxEqPart = (maxValueEquations |> eq as SES_SIMPLE_ASSIGN(__) =>
-      equation_(eq, contextOther, &varDecls, &tmp, modelNamePrefix)
+      equation_(-1, eq, contextOther, &varDecls, &tmp, modelNamePrefix)
     ;separator="\n")
 
   <<
@@ -2667,7 +2728,7 @@ template functionUpdateBoundParameters(list<SimEqSystem> parameterEquations, Str
   let &varDecls = buffer ""
   let &tmp = buffer ""
   let body = (parameterEquations |> eq  =>
-    '<%equation_(eq, contextSimulationDiscrete, &varDecls, &tmp, modelNamePrefix)%>'
+    '<%equation_(-1, eq, contextSimulationDiscrete, &varDecls, &tmp, modelNamePrefix)%>'
     ;separator="\n")
 
   <<
@@ -2698,7 +2759,7 @@ template functionInitialEquations(list<SimEqSystem> initalEquations, String mode
                     ;separator="\n")
               else
                 (initalEquations |> eq hasindex i0 =>
-                    equation_(eq, contextSimulationDiscrete, &varDecls, &eqfuncs, modelNamePrefix)
+                    equation_(-1, eq, contextSimulationDiscrete, &varDecls, &eqfuncs, modelNamePrefix)
                     ;separator="\n")
 
   let eqArrayDecl = if Flags.isSet(Flags.PARMODAUTO) then
@@ -2720,16 +2781,63 @@ template functionInitialEquations(list<SimEqSystem> initalEquations, String mode
     TRACE_PUSH
     <%varDecls%>
 
-    data->simulationInfo.discreteCall = 1;
+    data->simulationInfo->discreteCall = 1;
     <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionInitialEquations(<%nrfuncs%>, data, threadData, functionInitialEquations_systems);'
     else '<%fncalls%>' %>
-    data->simulationInfo.discreteCall = 0;
+    data->simulationInfo->discreteCall = 0;
 
     TRACE_POP
     return 0;
   }
   >>
 end functionInitialEquations;
+
+template functionInitialEquations_lambda0(list<SimEqSystem> initalEquations_lambda0, String modelNamePrefix)
+  "Generates function in simulation file."
+::=
+  let () = System.tmpTickReset(0)
+  let &varDecls = buffer ""
+  let nrfuncs = listLength(initalEquations_lambda0)
+  let &eqfuncs = buffer ""
+  let &eqArray = buffer ""
+  let fncalls = if Flags.isSet(Flags.PARMODAUTO) then
+                (initalEquations_lambda0 |> eq hasindex i0 =>
+                    equation_arrayFormat(eq, "InitialEquations", contextSimulationDiscrete, i0, &varDecls, &eqArray, &eqfuncs, modelNamePrefix)
+                    ;separator="\n")
+              else
+                (initalEquations_lambda0 |> eq hasindex i0 =>
+                    equation_(-1, eq, contextSimulationDiscrete, &varDecls, &eqfuncs, modelNamePrefix)
+                    ;separator="\n")
+
+  let eqArrayDecl = if Flags.isSet(Flags.PARMODAUTO) then
+                <<
+                static void (*functionInitialEquations_systems[<%listLength(initalEquations_lambda0)%>])(DATA *, threadData_t*) = {
+                    <%eqArray%>
+                };
+                >>
+              else
+                ""
+
+  <<
+  <%eqfuncs%>
+
+  <%eqArrayDecl%>
+
+  int <%symbolName(modelNamePrefix,"functionInitialEquations_lambda0")%>(DATA *data, threadData_t *threadData)
+  {
+    TRACE_PUSH
+    <%varDecls%>
+
+    data->simulationInfo->discreteCall = 1;
+    <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionInitialEquations_lambda0(<%nrfuncs%>, data, threadData, functionInitialEquations_lambda0_systems);'
+    else '<%fncalls%>' %>
+    data->simulationInfo->discreteCall = 0;
+
+    TRACE_POP
+    return 0;
+  }
+  >>
+end functionInitialEquations_lambda0;
 
 template functionRemovedInitialEquationsBody(SimEqSystem eq, Text &varDecls, Text &eqs, String modelNamePrefix)
  "Generates an equation."
@@ -2754,7 +2862,7 @@ template functionRemovedInitialEquationsBody(SimEqSystem eq, Text &varDecls, Tex
       >>
     end match
   else
-  equation_(eq, contextSimulationDiscrete, &varDecls, &eqs, modelNamePrefix)
+  equation_(-1, eq, contextSimulationDiscrete, &varDecls, &eqs, modelNamePrefix)
   end match
 end functionRemovedInitialEquationsBody;
 
@@ -3565,7 +3673,7 @@ template functionODE(list<list<SimEqSystem>> derivativEquations, Text method, Op
 
     <%varDecls%>
 
-    data->simulationInfo.callStatistics.functionODE++;
+    data->simulationInfo->callStatistics.functionODE++;
 
     <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionODE(<%nrfuncs%>, data, threadData, functionODE_systems);'
     else '<%fncalls%>' %>
@@ -3624,7 +3732,7 @@ template functionDAE(list<SimEqSystem> allEquationsPlusWhen, String modelNamePre
                     ;separator="\n")
               else
                 (allEquationsPlusWhen |> eq hasindex i0 =>
-                    equation_(eq, contextSimulationDiscrete, &varDecls, &eqfuncs, modelNamePrefix)
+                    equation_(-1, eq, contextSimulationDiscrete, &varDecls, &eqfuncs, modelNamePrefix)
                     ;separator="\n")
 
   let eqArrayDecl = if Flags.isSet(Flags.PARMODAUTO) then
@@ -3650,11 +3758,11 @@ template functionDAE(list<SimEqSystem> allEquationsPlusWhen, String modelNamePre
     <%addRootsTempArray()%>
     <%varDecls%>
 
-    data->simulationInfo.needToIterate = 0;
-    data->simulationInfo.discreteCall = 1;
+    data->simulationInfo->needToIterate = 0;
+    data->simulationInfo->discreteCall = 1;
     <%if Flags.isSet(Flags.PARMODAUTO) then 'PM_functionDAE(<%nrfuncs%>, data, threadData, functionDAE_systems);'
     else '<%fncalls%>' %>
-    data->simulationInfo.discreteCall = 0;
+    data->simulationInfo->discreteCall = 0;
 
     TRACE_POP
     return 0;
@@ -3671,7 +3779,7 @@ template functionZeroCrossing(list<ZeroCrossing> zeroCrossings, list<SimEqSystem
   let &tmp = buffer ""
   let &auxFunction = buffer ""
   let eqs = (equationsForZeroCrossings |> eq =>
-       equation_(eq, contextSimulationNonDiscrete, &varDecls, &tmp, modelNamePrefix)
+       equation_(-1, eq, contextSimulationNonDiscrete, &varDecls, &tmp, modelNamePrefix)
       ;separator="\n")
   let forwardEqs = equationsForZeroCrossings |> eq => equationForward_(eq,contextSimulationNonDiscrete,modelNamePrefix); separator="\n"
 
@@ -3714,7 +3822,7 @@ template functionZeroCrossing(list<ZeroCrossing> zeroCrossings, list<SimEqSystem
     TRACE_PUSH
     <%varDecls%>
 
-    data->simulationInfo.callStatistics.functionZeroCrossingsEquations++;
+    data->simulationInfo->callStatistics.functionZeroCrossingsEquations++;
 
     <%eqs%>
 
@@ -3727,7 +3835,7 @@ template functionZeroCrossing(list<ZeroCrossing> zeroCrossings, list<SimEqSystem
     TRACE_PUSH
     <%varDecls2%>
 
-    data->simulationInfo.callStatistics.functionZeroCrossings++;
+    data->simulationInfo->callStatistics.functionZeroCrossings++;
 
     <%zeroCrossingsCode%>
 
@@ -3779,7 +3887,7 @@ template zeroCrossingTpl(Integer index1, Exp relation, Text &varDecls, Text &aux
     let indx = daeExp(idx, contextZeroCross, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    gout[<%index1%>] = (floor(<%e1%>) != floor(data->simulationInfo.mathEventsValuePre[<%indx%>])) ? 1 : -1;
+    gout[<%index1%>] = (floor(<%e1%>) != floor(data->simulationInfo->mathEventsValuePre[<%indx%>])) ? 1 : -1;
     >>
   case CALL(path=IDENT(name="floor"), expLst={exp1, idx}) then
     let &preExp = buffer ""
@@ -3787,7 +3895,7 @@ template zeroCrossingTpl(Integer index1, Exp relation, Text &varDecls, Text &aux
     let indx = daeExp(idx, contextZeroCross, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    gout[<%index1%>] = (floor(<%e1%>) != floor(data->simulationInfo.mathEventsValuePre[<%indx%>])) ? 1 : -1;
+    gout[<%index1%>] = (floor(<%e1%>) != floor(data->simulationInfo->mathEventsValuePre[<%indx%>])) ? 1 : -1;
     >>
   case CALL(path=IDENT(name="ceil"), expLst={exp1, idx}) then
     let &preExp = buffer ""
@@ -3795,7 +3903,7 @@ template zeroCrossingTpl(Integer index1, Exp relation, Text &varDecls, Text &aux
     let indx = daeExp(idx, contextZeroCross, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    gout[<%index1%>] = (ceil(<%e1%>) != ceil(data->simulationInfo.mathEventsValuePre[<%indx%>])) ? 1 : -1;
+    gout[<%index1%>] = (ceil(<%e1%>) != ceil(data->simulationInfo->mathEventsValuePre[<%indx%>])) ? 1 : -1;
     >>
   case CALL(path=IDENT(name="div"), expLst={exp1, exp2, idx}) then
     let &preExp = buffer ""
@@ -3804,7 +3912,7 @@ template zeroCrossingTpl(Integer index1, Exp relation, Text &varDecls, Text &aux
     let indx = daeExp(idx, contextZeroCross, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    gout[<%index1%>] = (trunc(<%e1%>/<%e2%>) != trunc(data->simulationInfo.mathEventsValuePre[<%indx%>]/data->simulationInfo.mathEventsValuePre[<%indx%>+1])) ? 1 : -1;
+    gout[<%index1%>] = (trunc(<%e1%>/<%e2%>) != trunc(data->simulationInfo->mathEventsValuePre[<%indx%>]/data->simulationInfo->mathEventsValuePre[<%indx%>+1])) ? 1 : -1;
     >>
   else
     error(sourceInfo(), ' UNKNOWN ZERO CROSSING for <%index1%>')
@@ -3878,7 +3986,7 @@ template relationTpl(Integer index1, Exp relation, Context context, Text &varDec
     let res = daeExp(exp, context, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    data->simulationInfo.relations[<%index1%>] = <%res%>;
+    data->simulationInfo->relations[<%index1%>] = <%res%>;
     >>
   else
     <<
@@ -3947,7 +4055,7 @@ template functionAssertsforCheck(list<SimEqSystem> algAndEqAssertsEquations, Str
   let &varDecls = buffer ""
   let &tmp = buffer ""
   let algAndEqAssertsPart = (algAndEqAssertsEquations |> eq =>
-    equation_(eq, contextSimulationDiscrete, &varDecls, &tmp, modelNamePrefix)
+    equation_(-1, eq, contextSimulationDiscrete, &varDecls, &tmp, modelNamePrefix)
     ;separator="\n")
 
   <<
@@ -4110,7 +4218,7 @@ case _ then
       ;separator=",")
       let colorArray = (colorList |> (indexes) hasindex index0 =>
         let colorCol = ( indexes |> i_index =>
-         <<data->simulationInfo.analyticJacobians[index].sparsePattern.colorCols[<%i_index%>] = <%intAdd(index0,1)%>;>>
+         <<data->simulationInfo->analyticJacobians[index].sparsePattern.colorCols[<%i_index%>] = <%intAdd(index0,1)%>;>>
         ;separator="\n")
       '<%colorCol%>'
       ;separator="\n")
@@ -4127,29 +4235,29 @@ case _ then
 
         int i;
 
-        data->simulationInfo.analyticJacobians[index].sizeCols = <%index_%>;
-        data->simulationInfo.analyticJacobians[index].sizeRows = <%indexColumn%>;
-        data->simulationInfo.analyticJacobians[index].sizeTmpVars = <%tmpvarsSize%>;
-        data->simulationInfo.analyticJacobians[index].seedVars = (modelica_real*) calloc(<%index_%>,sizeof(modelica_real));
-        data->simulationInfo.analyticJacobians[index].resultVars = (modelica_real*) calloc(<%indexColumn%>,sizeof(modelica_real));
-        data->simulationInfo.analyticJacobians[index].tmpVars = (modelica_real*) calloc(<%tmpvarsSize%>,sizeof(modelica_real));
-        data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex = (unsigned int*) malloc(<%sizeleadindex%>*sizeof(int));
-        data->simulationInfo.analyticJacobians[index].sparsePattern.index = (unsigned int*) malloc(<%sp_size_index%>*sizeof(int));
-        data->simulationInfo.analyticJacobians[index].sparsePattern.numberOfNoneZeros = <%sp_size_index%>;
-        data->simulationInfo.analyticJacobians[index].sparsePattern.colorCols = (unsigned int*) malloc(<%index_%>*sizeof(int));
-        data->simulationInfo.analyticJacobians[index].sparsePattern.maxColors = <%maxColor%>;
-        data->simulationInfo.analyticJacobians[index].jacobian = NULL;
+        data->simulationInfo->analyticJacobians[index].sizeCols = <%index_%>;
+        data->simulationInfo->analyticJacobians[index].sizeRows = <%indexColumn%>;
+        data->simulationInfo->analyticJacobians[index].sizeTmpVars = <%tmpvarsSize%>;
+        data->simulationInfo->analyticJacobians[index].seedVars = (modelica_real*) calloc(<%index_%>,sizeof(modelica_real));
+        data->simulationInfo->analyticJacobians[index].resultVars = (modelica_real*) calloc(<%indexColumn%>,sizeof(modelica_real));
+        data->simulationInfo->analyticJacobians[index].tmpVars = (modelica_real*) calloc(<%tmpvarsSize%>,sizeof(modelica_real));
+        data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex = (unsigned int*) malloc(<%sizeleadindex%>*sizeof(int));
+        data->simulationInfo->analyticJacobians[index].sparsePattern.index = (unsigned int*) malloc(<%sp_size_index%>*sizeof(int));
+        data->simulationInfo->analyticJacobians[index].sparsePattern.numberOfNoneZeros = <%sp_size_index%>;
+        data->simulationInfo->analyticJacobians[index].sparsePattern.colorCols = (unsigned int*) malloc(<%index_%>*sizeof(int));
+        data->simulationInfo->analyticJacobians[index].sparsePattern.maxColors = <%maxColor%>;
+        data->simulationInfo->analyticJacobians[index].jacobian = NULL;
 
         /* write lead index of compressed sparse column*/
         const int tmp[<%sizeleadindex%>] = {<%leadindex%>};
-        memcpy(data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex, tmp, <%sizeleadindex%>*sizeof(int));
+        memcpy(data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex, tmp, <%sizeleadindex%>*sizeof(int));
 
         for(i=1;i<<%sizeleadindex%>;++i)
-            data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex[i] += data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex[i-1];
+            data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex[i] += data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex[i-1];
 
         /* call sparse index */
         const int tmpElem[<%sp_size_index%>] = {<%indexElems%>};
-        memcpy(data->simulationInfo.analyticJacobians[index].sparsePattern.index, tmpElem, <%sp_size_index%>*sizeof(int));
+        memcpy(data->simulationInfo->analyticJacobians[index].sparsePattern.index, tmpElem, <%sp_size_index%>*sizeof(int));
 
         /* write color array */
         <%colorArray%>
@@ -4208,7 +4316,7 @@ template functionJac(list<SimEqSystem> jacEquations, list<SimVar> tmpVars, Strin
   let &varDecls = buffer ""
   let &tmp = buffer ""
   let eqns_ = (jacEquations |> eq =>
-    equation_(eq, contextSimulationNonDiscrete, &varDecls, &tmp, modelNamePrefix); separator="\n")
+    equation_(-1, eq, contextSimulationNonDiscrete, &varDecls, &tmp, modelNamePrefix); separator="\n")
 
   <<
   <%&tmp%>
@@ -4302,7 +4410,7 @@ template equation_arrayFormat(SimEqSystem eq, String name, Context context, Inte
   )
 end equation_arrayFormat;
 
-template equation_(SimEqSystem eq, Context context, Text &varDecls, Text &eqs, String modelNamePrefix)
+template equation_(Integer clockIndex, SimEqSystem eq, Context context, Text &varDecls, Text &eqs, String modelNamePrefix)
  "Generates an equation.
   This template should not be used for a SES_RESIDUAL.
   Residual equations are handled differently."
@@ -4365,6 +4473,7 @@ template equation_(SimEqSystem eq, Context context, Text &varDecls, Text &eqs, S
     ""
 
   let &varD += addRootsTempArray()
+  let clockIndex_ = if intLt(clockIndex, 0) then '' else 'const int clockIndex = <%clockIndex%>;'
 
   match eq
   case e as SES_NONLINEAR(nlSystem=nls as NONLINEARSYSTEM(__), alternativeTearing = SOME(at as NONLINEARSYSTEM(__))) then
@@ -4378,6 +4487,7 @@ template equation_(SimEqSystem eq, Context context, Text &varDecls, Text &eqs, S
   int <%symbolName(modelNamePrefix,"eqFunction")%>_<%ix%>(DATA *data, threadData_t *threadData)
   {
     TRACE_PUSH
+    <%clockIndex_%>
     const int equationIndexes[2] = {1,<%ix%>};
     <%&varD%>
     <%x%>
@@ -4391,6 +4501,7 @@ template equation_(SimEqSystem eq, Context context, Text &varDecls, Text &eqs, S
   void <%symbolName(modelNamePrefix,"eqFunction")%>_<%ix2%>(DATA *data, threadData_t *threadData)
   {
     TRACE_PUSH
+    <%clockIndex_%>
     const int equationIndexes[2] = {1,<%ix2%>};
     <%&varD%>
     <%x2%>
@@ -4414,6 +4525,7 @@ template equation_(SimEqSystem eq, Context context, Text &varDecls, Text &eqs, S
   void <%symbolName(modelNamePrefix,"eqFunction")%>_<%ix%>(DATA *data, threadData_t *threadData)
   {
     TRACE_PUSH
+    <%clockIndex_%>
     const int equationIndexes[2] = {1,<%ix%>};
     <%&varD%>
     <%x%>
@@ -4572,22 +4684,22 @@ match eq
 case e as SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing=NONE()) then
   <<
   /* Linear equation system */
-  <% if profileSome() then 'SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%ls.index%>).profileBlockIndex);' %>
-  <%ls.vars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo.linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>] = _<%cref(name)%>(1);' ;separator="\n"%>
+  <% if profileSome() then 'SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%ls.index%>).profileBlockIndex);' %>
+  <%ls.vars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo->linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>] = _<%cref(name)%>(1);' ;separator="\n"%>
   solve_linear_system(data, threadData, <%ls.indexLinearSystem%>);
-  <%ls.vars |> SIMVAR(__) hasindex i0 => '<%cref(name)%> = data->simulationInfo.linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>];' ;separator="\n"%>
-  <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%ls.index%>).profileBlockIndex);' %>
+  <%ls.vars |> SIMVAR(__) hasindex i0 => '<%cref(name)%> = data->simulationInfo->linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>];' ;separator="\n"%>
+  <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%ls.index%>).profileBlockIndex);' %>
   >>
 
 // dynamic tearing
 case e as SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing = SOME(LINEARSYSTEM(__))) then
   <<
   /* Linear equation system */
-  <% if profileSome() then 'SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%ls.index%>).profileBlockIndex);' %>
-  <%ls.vars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo.linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>] = _<%cref(name)%>(1);' ;separator="\n"%>
+  <% if profileSome() then 'SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%ls.index%>).profileBlockIndex);' %>
+  <%ls.vars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo->linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>] = _<%cref(name)%>(1);' ;separator="\n"%>
   solve_linear_system(data, threadData, <%ls.indexLinearSystem%>);
-  <%ls.vars |> SIMVAR(__) hasindex i0 => '<%cref(name)%> = data->simulationInfo.linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>];' ;separator="\n"%>
-  <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%ls.index%>).profileBlockIndex);' %>
+  <%ls.vars |> SIMVAR(__) hasindex i0 => '<%cref(name)%> = data->simulationInfo->linearSystemData[<%ls.indexLinearSystem%>].x[<%i0%>];' ;separator="\n"%>
+  <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%ls.index%>).profileBlockIndex);' %>
   >>
 end equationLinear;
 
@@ -4597,15 +4709,15 @@ template equationMixed(SimEqSystem eq, Context context, Text &varDecls, Text &tm
 ::=
 match eq
 case eqn as SES_MIXED(__) then
-  let contEqs = equation_(cont, context, &varDecls, &tmp, modelNamePrefixStr)
+  let contEqs = equation_(-1, cont, context, &varDecls, &tmp, modelNamePrefixStr)
   let numDiscVarsStr = listLength(discVars)
   <<
   /* Continuous equation part in <%contEqs%> */
-  <% if profileSome() then 'SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%index%>).profileBlockIndex);' %>
-  <%discVars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo.mixedSystemData[<%eqn.indexMixedSystem%>].iterationVarsPtr[<%i0%>] = (modelica_boolean*)&<%cref(name)%>;' ;separator="\n"%>;
-  <%discVars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo.mixedSystemData[<%eqn.indexMixedSystem%>].iterationPreVarsPtr[<%i0%>] = (modelica_boolean*)&$P$PRE<%cref(name)%>;' ;separator="\n"%>;
+  <% if profileSome() then 'SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%index%>).profileBlockIndex);' %>
+  <%discVars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo->mixedSystemData[<%eqn.indexMixedSystem%>].iterationVarsPtr[<%i0%>] = (modelica_boolean*)&<%cref(name)%>;' ;separator="\n"%>;
+  <%discVars |> SIMVAR(__) hasindex i0 => 'data->simulationInfo->mixedSystemData[<%eqn.indexMixedSystem%>].iterationPreVarsPtr[<%i0%>] = (modelica_boolean*)&$P$PRE<%cref(name)%>;' ;separator="\n"%>;
   solve_mixed_system(data, <%indexMixedSystem%>);
-  <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%index%>).profileBlockIndex);' %>
+  <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%index%>).profileBlockIndex);' %>
   >>
 end equationMixed;
 
@@ -4632,17 +4744,17 @@ template equationNonlinear(SimEqSystem eq, Context context, Text &varDecls, Stri
       }
       <% if profileSome() then
       <<
-      SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex);
-      SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex,-1);
+      SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%nls.index%>).profileBlockIndex);
+      SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%nls.index%>).profileBlockIndex,-1);
       >>
       %>
       /* extrapolate data */
       <%nls.crefs |> name hasindex i0 =>
         let namestr = cref(name)
         <<
-        data->simulationInfo.nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsx[<%i0%>] = <%namestr%>;
-        data->simulationInfo.nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsxOld[<%i0%>] = _<%namestr%>(1) /*old1*/;
-        data->simulationInfo.nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsxExtrapolation[<%i0%>] = extraPolate(data, _<%namestr%>(1) /*old1*/, _<%namestr%>(2) /*old2*/, $P$ATTRIBUTE<%namestr%>.min, $P$ATTRIBUTE<%namestr%>.max);
+        data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsx[<%i0%>] = <%namestr%>;
+        data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsxOld[<%i0%>] = _<%namestr%>(1) /*old1*/;
+        data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsxExtrapolation[<%i0%>] = extraPolate(data, _<%namestr%>(1) /*old1*/, _<%namestr%>(2) /*old2*/, $P$ATTRIBUTE<%namestr%>.min, $P$ATTRIBUTE<%namestr%>.max);
         >>
       ;separator="\n"%>
       retValue = solve_nonlinear_system(data, threadData, <%nls.indexNonLinearSystem%>);
@@ -4653,8 +4765,8 @@ template equationNonlinear(SimEqSystem eq, Context context, Text &varDecls, Stri
         <%returnval2%>
       }
       /* write solution */
-      <%nls.crefs |> name hasindex i0 => '<%cref(name)%> = data->simulationInfo.nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsx[<%i0%>];' ;separator="\n"%>
-      <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex);' %>
+      <%nls.crefs |> name hasindex i0 => '<%cref(name)%> = data->simulationInfo->nonlinearSystemData[<%nls.indexNonLinearSystem%>].nlsx[<%i0%>];' ;separator="\n"%>
+      <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%nls.index%>).profileBlockIndex);' %>
       <%returnval%>
       >>
 end equationNonlinear;
@@ -4679,17 +4791,17 @@ template equationNonlinearAlternativeTearing(SimEqSystem eq, Context context, Te
       }
       <% if profileSome() then
       <<
-      SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex);
-      SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex,-1);
+      SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%at.index%>).profileBlockIndex);
+      SIM_PROF_ADD_NCALL_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%at.index%>).profileBlockIndex,-1);
       >>
       %>
       /* extrapolate data */
       <%at.crefs |> name hasindex i0 =>
         let namestr = cref(name)
         <<
-        data->simulationInfo.nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsx[<%i0%>] = <%namestr%>;
-        data->simulationInfo.nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxOld[<%i0%>] = _<%namestr%>(1) /*old1*/;
-        data->simulationInfo.nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxExtrapolation[<%i0%>] = extraPolate(data, _<%namestr%>(1) /*old1*/, _<%namestr%>(2) /*old2*/,$P$ATTRIBUTE<%namestr%>.min, $P$ATTRIBUTE<%namestr%>.max);
+        data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsx[<%i0%>] = <%namestr%>;
+        data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxOld[<%i0%>] = _<%namestr%>(1) /*old1*/;
+        data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsxExtrapolation[<%i0%>] = extraPolate(data, _<%namestr%>(1) /*old1*/, _<%namestr%>(2) /*old2*/,$P$ATTRIBUTE<%namestr%>.min, $P$ATTRIBUTE<%namestr%>.max);
         >>
       ;separator="\n"%>
       retValue = solve_nonlinear_system(data, threadData, <%at.indexNonLinearSystem%>);
@@ -4697,8 +4809,8 @@ template equationNonlinearAlternativeTearing(SimEqSystem eq, Context context, Te
       /* The casual tearing set found a solution */
       if (retValue == 0){
       /* write solution */
-      <%at.crefs |> name hasindex i0 => '<%cref(name)%> = data->simulationInfo.nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsx[<%i0%>];' ;separator="\n"%>
-      <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex);' %>
+      <%at.crefs |> name hasindex i0 => '<%cref(name)%> = data->simulationInfo->nonlinearSystemData[<%at.indexNonLinearSystem%>].nlsx[<%i0%>];' ;separator="\n"%>
+      <% if profileSome() then 'SIM_PROF_ACC_EQ(modelInfoGetEquation(&data->modelData->modelDataXml,<%at.index%>).profileBlockIndex);' %>
       }
       >>
 end equationNonlinearAlternativeTearing;
@@ -4780,7 +4892,7 @@ template whenOperators(list<WhenOperator> whenOps, Context context, Text &varDec
       <%preExp%>
       <%lhs%>
       infoStreamPrint(LOG_EVENTS, 0, "reinit <%cref(stateVar)%> = <%crefToPrintfArg(stateVar)%>", <%cref(stateVar)%>);
-      data->simulationInfo.needToIterate = 1;
+      data->simulationInfo->needToIterate = 1;
       >>
     case TERMINATE(__) then
       let &preExp = buffer ""
@@ -4854,7 +4966,7 @@ case SES_IFEQUATION(ifbranches=ifbranches, elsebranch=elsebranch) then
   let IfEquation = (ifbranches |> (e, eqns) hasindex index0 =>
     let condition = daeExp(e, context, &preExp, &varDecls, &eqnsDecls)
     let ifequations = ( eqns |> eqn =>
-       let eqnStr = equation_(eqn, context, &varDecls, &eqnsDecls, modelNamePrefixStr)
+       let eqnStr = equation_(-1, eqn, context, &varDecls, &eqnsDecls, modelNamePrefixStr)
        <<
        <%eqnStr%>
        >>
@@ -4869,7 +4981,7 @@ case SES_IFEQUATION(ifbranches=ifbranches, elsebranch=elsebranch) then
     >>
     ;separator="\n")
   let elseequations = ( elsebranch |> eqn =>
-     let eqnStr = equation_(eqn, context, &varDecls, &eqnsDecls /*EQNBUF*/, modelNamePrefixStr)
+     let eqnStr = equation_(-1, eqn, context, &varDecls, &eqnsDecls /*EQNBUF*/, modelNamePrefixStr)
        <<
        <%eqnStr%>
        >>
@@ -5013,7 +5125,7 @@ end simulationFunctionsHeaderFile;
 template simulationMakefile(String target, SimCode simCode)
  "Generates the contents of the makefile for the simulation case."
 ::=
-match target
+match getGeneralTarget(target)
 case "msvc" then
 match simCode
 case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simulationSettingsOpt = sopt) then
@@ -5494,7 +5606,7 @@ template optimizationComponents1(ClassAttributes classAttribute, SimCode simCode
               %>
               }
               <%vars.inputVars |> SIMVAR(__) hasindex i0 =>
-              'data->simulationInfo.inputVars[<%i0%>] = <%cref(name)%>;'
+              'data->simulationInfo->inputVars[<%i0%>] = <%cref(name)%>;'
               ;separator="\n"
               %>
             >>
@@ -5545,7 +5657,7 @@ template optimizationComponents1(ClassAttributes classAttribute, SimCode simCode
            int <%symbolName(modelNamePrefixStr,"pickUpBoundsForInputsInOptimization")%>(DATA* data, modelica_real* min, modelica_real* max, modelica_real*nominal, modelica_boolean *useNominal, char ** name, modelica_real * start, modelica_real* startTimeOpt)
            {
              <%inputBounds%>
-             *startTimeOpt = data->simulationInfo.startTime - 1.0;
+             *startTimeOpt = data->simulationInfo->startTime - 1.0;
              <%startTimeOpt%>
              return 0;
            }
@@ -5640,7 +5752,7 @@ template functionODEPartial(list<list<SimEqSystem>> derivativEquations, Text met
 
     <%varDecls%>
 
-    //data->simulationInfo.callStatistics.functionODE++;
+    //data->simulationInfo->callStatistics.functionODE++;
 
     <%fncalls%>
 

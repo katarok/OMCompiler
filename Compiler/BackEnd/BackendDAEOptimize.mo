@@ -91,7 +91,7 @@ protected
   list<BackendDAE.Equation> removedEqsList = {};
   BackendDAE.Shared shared;
 algorithm
-  _ := BackendDAEUtil.traverseBackendDAEExpsNoCopyWithUpdate(outDAE, ExpressionSimplify.simplifyTraverseHelper, 0);
+  _ := BackendDAEUtil.traverseBackendDAEExpsNoCopyWithUpdate(outDAE, ExpressionSimplify.simplify1TraverseHelper, 0);
 
   // filter empty algorithms
   shared := outDAE.shared;
@@ -4191,12 +4191,12 @@ protected
   BackendDAE.Equation eqn, eqn1;
   DAE.Exp left, right, e1, e2, e, e3, e4;
   list<DAE.Exp> left_lst, right_lst;
-  list<Integer> indRemove = {};
+  list<Integer> indRemove;
   DAE.ElementSource source "origin of equation";
   BackendDAE.EquationAttributes attr;
   Boolean update, sc;
   Absyn.Path path;
-  list<DAE.Exp> expLst, arrayLst, arrayLst2;
+  list<DAE.Exp> arrayLst, arrayLst2, expLst;
   DAE.CallAttributes cattr;
   DAE.ComponentRef cr;
   BackendDAE.Var tmpvar;
@@ -4213,26 +4213,36 @@ algorithm
     BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns) := syst;
     BackendDAE.EQUATION_ARRAY(numberOfElement = n) := eqns;
     update := false;
+	indRemove := {};
     for i in 1:n loop
       eqn := BackendEquation.equationNth1(eqns, i);
       if BackendEquation.isComplexEquation(eqn) then
         BackendDAE.COMPLEX_EQUATION(left=left, right=right, size=size, attr= attr, source=source) := eqn;
         if Expression.isTuple(left) and Expression.isTuple(right) then // tuple() = tuple()
+          //print(BackendDump.equationString(eqn) + "--In--\n");
           DAE.TUPLE(PR = left_lst) := left;
-          (_, expLst) := List.splitOnTrue(left_lst, Expression.isScalar);
-          if listLength(expLst) > 0 then
-            continue;
-          end if;
           DAE.TUPLE(PR = right_lst) := right;
           update := true;
           indRemove := i :: indRemove;
           for e1 in left_lst loop
             e2 :: right_lst := right_lst;
-            if Expression.isScalar(e2) then
-              eqn1 := BackendDAE.EQUATION(e1, e2, source, attr);
-              //print(BackendDump.equationString(eqn1) + "--new--\n");
-              eqns := BackendEquation.addEquation(eqn1, eqns);
-            end if;
+            //print("=>" +  ExpressionDump.printExpStr(e2) + " = " +  ExpressionDump.printExpStr(e1) + "\n");
+            if not Expression.isWild(e1) then
+              if Expression.isScalar(e2) then
+                eqn1 := BackendEquation.generateEquation(e1, e2, source, attr);
+                eqns := BackendEquation.addEquation(eqn1, eqns);
+                //print(BackendDump.equationString(eqn1) + "--new--\n");
+              else
+                expLst := simplifyComplexFunction2(e1);
+                arrayLst := simplifyComplexFunction2(e2);
+                for e_asub in arrayLst loop
+                  e3 :: expLst := expLst;
+                  eqn1 := BackendEquation.generateEquation(e_asub, e3, source, attr);
+                  eqns := BackendEquation.addEquation(eqn1, eqns);
+                  //print(BackendDump.equationString(eqn1) + "--new--\n");
+                end for;
+              end if; //isScalar
+            end if; // isWild
           end for;
          elseif Expression.isTuple(left) and Expression.isCall(right) then //tuple() = call()
           DAE.TUPLE(PR = left_lst) := left;
@@ -4318,6 +4328,33 @@ algorithm
 
   outDAE.eqs := systlst;
 end simplifyComplexFunction1;
+
+function simplifyComplexFunction2
+  input DAE.Exp e1;
+  output list<DAE.Exp> out_lst_e1 = {};
+protected
+  list<DAE.Exp> lst_e = {};
+algorithm
+  try
+    if Expression.isArray(e1) or Expression.isArrayType(Expression.typeof(e1)) then
+      lst_e := Expression.getArrayOrRangeContents(e1);
+      for e in lst_e loop
+        out_lst_e1 := List.appendNoCopy(simplifyComplexFunction2(e),out_lst_e1);
+      end for;
+    elseif Expression.isRecord(e1) then
+      lst_e := Expression.splitRecord(e1, Expression.typeof(e1));
+      for e in lst_e loop
+        out_lst_e1 := List.appendNoCopy(simplifyComplexFunction2(e),out_lst_e1);
+      end for;
+      out_lst_e1 := {e1};
+    else
+     out_lst_e1 := {e1};
+   end if;
+  else
+     out_lst_e1 := {e1};
+  end try;
+
+end simplifyComplexFunction2;
 
 // =============================================================================
 // section for simplifyLoops
@@ -5402,8 +5439,6 @@ end addTimeAsState4;
 //-------------------------------------
 //Evaluate Output Variables Only.
 //-------------------------------------
-
-
 public function evaluateOutputsOnly"Computes only the scc which are necessary in order to calculate the output vars.
 author: Waurich TUD 09/2015"
   input BackendDAE.BackendDAE daeIn;
@@ -5455,12 +5490,11 @@ algorithm
     BackendDAE.EQSYSTEM(orderedVars = vars) := syst;
     varLst := BackendVariable.varList(vars);
     varLst := List.filterOnTrue(varLst,BackendVariable.isOutputVar);
-    if listEmpty(varLst) then
-      //print("No output variables in this system\n");
 
-    //THIS SYSTEM CONTAINS OUTPUT VARIABLES
-    //-------------------------------------
-    else
+    if not listEmpty(varLst) then
+
+      //THIS SYSTEM CONTAINS OUTPUT VARIABLES
+      //-------------------------------------
       outputVarIndxs := BackendVariable.getVarIndexFromVars(varLst,vars);
       outputTasks := List.map(List.map1(outputVarIndxs,Array.getIndexFirst,varCompMapping),Util.tuple31);
         //print("outputTasks "+stringDelimitList(List.map(outputTasks,intString),", ")+"\n");
@@ -5536,9 +5570,12 @@ algorithm
 
 	    (syst, _, _, mapEqnIncRow, mapIncRowEqn) := BackendDAEUtil.getIncidenceMatrixScalar(syst, BackendDAE.NORMAL(), SOME(funcTree));
 	    syst := BackendDAETransform.strongComponentsScalar(syst,shared,mapEqnIncRow,mapIncRowEqn);
-
-      systsNew := syst::systsNew;
+      syst.removedEqs := BackendEquation.emptyEqns();
+    else
+      print("No output variables in this system\n");
     end if;
+
+    systsNew := syst::systsNew;
   end for;
 
    //alias vars are not necessary anymore

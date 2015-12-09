@@ -63,6 +63,18 @@ template replaceDotAndUnderscore(String str)
     System.unquoteIdentifier(str_underscores)
 end replaceDotAndUnderscore;
 
+template getGeneralTarget(String str)
+ "Replace _ with __ and dot in identifiers with _"
+::=
+  match str
+  case "msvc10"
+  case "msvc12"
+  case "msvc13"
+  case "msvc15"
+  then "msvc"
+  else str
+end getGeneralTarget;
+
 template underscorePath(Path path)
  "Generate paths with components separated by underscores.
   Replaces also the . in identifiers with _.
@@ -95,6 +107,7 @@ template crefStr(ComponentRef cr)
   case CREF_IDENT(__) then '<%System.unquoteIdentifier(ident)%><%subscriptsStr(subscriptLst)%>'
   // Are these even needed? Function context should only have CREF_IDENT :)
   case CREF_QUAL(ident = "$DER") then 'der(<%crefStr(componentRef)%>)'
+  case CREF_QUAL(ident = "$CLKPRE") then 'previous(<%crefStr(componentRef)%>)'
   case CREF_QUAL(__) then '<%System.unquoteIdentifier(ident)%><%subscriptsStr(subscriptLst)%>._<%crefStr(componentRef)%>'
   else "CREF_NOT_IDENT_OR_QUAL"
 end crefStr;
@@ -106,6 +119,7 @@ template crefStrNoUnderscore(ComponentRef cr)
   match cr
   case CREF_IDENT(__) then '<%ident%><%subscriptsStr(subscriptLst)%>'
   case CREF_QUAL(ident = "$DER") then 'der(<%crefStrNoUnderscore(componentRef)%>)'
+  case CREF_QUAL(ident = "$CLKPRE") then 'previous(<%crefStrNoUnderscore(componentRef)%>)'
   case CREF_QUAL(__) then '<%ident%><%subscriptsStr(subscriptLst)%>.<%crefStrNoUnderscore(componentRef)%>'
   else "CREF_NOT_IDENT_OR_QUAL"
 end crefStrNoUnderscore;

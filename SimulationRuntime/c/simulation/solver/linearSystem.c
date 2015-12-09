@@ -39,15 +39,17 @@
 #include "linearSystem.h"
 #include "linearSolverLapack.h"
 #if !defined(OMC_MINIMAL_RUNTIME)
+#include "linearSolverKlu.h"
 #include "linearSolverLis.h"
 #include "linearSolverUmfpack.h"
 #endif
 #include "linearSolverTotalPivot.h"
-#include "simulation/simulation_info_xml.h"
+#include "simulation/simulation_info_json.h"
 
 static void setAElement(int row, int col, double value, int nth, void *data, threadData_t *);
 static void setAElementLis(int row, int col, double value, int nth, void *data, threadData_t *);
 static void setAElementUmfpack(int row, int col, double value, int nth, void *data, threadData_t *);
+static void setAElementKlu(int row, int col, double value, int nth, void *data, threadData_t *);
 static void setBElement(int row, double value, void *data, threadData_t*);
 static void setBElementLis(int row, double value, void *data, threadData_t*);
 
@@ -73,12 +75,12 @@ int initializeLinearSystems(DATA *data, threadData_t *threadData)
   TRACE_PUSH
   int i, nnz;
   int size;
-  LINEAR_SYSTEM_DATA *linsys = data->simulationInfo.linearSystemData;
+  LINEAR_SYSTEM_DATA *linsys = data->simulationInfo->linearSystemData;
   struct dataLapackAndTotalPivot *defaultSolverData;
 
   infoStreamPrint(LOG_LS_V, 1, "initialize linear system solvers");
 
-  for(i=0; i<data->modelData.nLinearSystems; ++i)
+  for(i=0; i<data->modelData->nLinearSystems; ++i)
   {
     size = linsys[i].size;
     nnz = linsys[i].nnz;
@@ -101,7 +103,7 @@ int initializeLinearSystems(DATA *data, threadData_t *threadData)
       {
         linsys[i].jacobianIndex = -1;
       }
-      nnz = data->simulationInfo.analyticJacobians[linsys[i].jacobianIndex].sparsePattern.numberOfNoneZeros;
+      nnz = data->simulationInfo->analyticJacobians[linsys[i].jacobianIndex].sparsePattern.numberOfNoneZeros;
       linsys[i].nnz = nnz;
     }
 
@@ -114,7 +116,7 @@ int initializeLinearSystems(DATA *data, threadData_t *threadData)
 
     /* allocate solver data */
     /* the implementation of matrix A is solver-specific */
-    switch(data->simulationInfo.lsMethod)
+    switch(data->simulationInfo->lsMethod)
     {
     case LS_LAPACK:
       linsys[i].A = (double*) malloc(size*size*sizeof(double));
@@ -135,6 +137,11 @@ int initializeLinearSystems(DATA *data, threadData_t *threadData)
       linsys[i].setAElement = setAElementUmfpack;
       linsys[i].setBElement = setBElement;
       allocateUmfPackData(size, size, nnz, &linsys[i].solverData);
+      break;
+    case LS_KLU:
+      linsys[i].setAElement = setAElementKlu;
+      linsys[i].setBElement = setBElement;
+      allocateKluData(size, size, nnz, &linsys[i].solverData);
       break;
 #else
     case LS_UMFPACK:
@@ -183,11 +190,11 @@ int updateStaticDataOfLinearSystems(DATA *data, threadData_t *threadData)
   TRACE_PUSH
   int i, nnz;
   int size;
-  LINEAR_SYSTEM_DATA *linsys = data->simulationInfo.linearSystemData;
+  LINEAR_SYSTEM_DATA *linsys = data->simulationInfo->linearSystemData;
 
   infoStreamPrint(LOG_LS_V, 1, "update static data of linear system solvers");
 
-  for(i=0; i<data->modelData.nLinearSystems; ++i)
+  for(i=0; i<data->modelData->nLinearSystems; ++i)
   {
     linsys[i].initializeStaticLSData(data, threadData, &linsys[i]);
   }
@@ -207,7 +214,7 @@ int updateStaticDataOfLinearSystems(DATA *data, threadData_t *threadData)
  */
 void printLinearSystemSolvingStatistics(DATA *data, int sysNumber, int logLevel)
 {
-  LINEAR_SYSTEM_DATA* linsys = data->simulationInfo.linearSystemData;
+  LINEAR_SYSTEM_DATA* linsys = data->simulationInfo->linearSystemData;
   infoStreamPrint(logLevel, 1, "Linear system %d with (size = %d, nonZeroElements = %d, density = %.2f %%) solver statistics:",
                                (int)linsys[sysNumber].equationIndex, (int)linsys[sysNumber].size, (int)linsys[sysNumber].nnz,
                                (((double) linsys[sysNumber].nnz) / ((double)(linsys[sysNumber].size*linsys[sysNumber].size)))*100 );
@@ -227,10 +234,10 @@ int freeLinearSystems(DATA *data, threadData_t *threadData)
 {
   TRACE_PUSH
   int i;
-  LINEAR_SYSTEM_DATA* linsys = data->simulationInfo.linearSystemData;
+  LINEAR_SYSTEM_DATA* linsys = data->simulationInfo->linearSystemData;
 
   infoStreamPrint(LOG_LS_V, 1, "free linear system solvers");
-  for(i=0; i<data->modelData.nLinearSystems; ++i)
+  for(i=0; i<data->modelData->nLinearSystems; ++i)
   {
     /* free system and solver data */
     free(linsys[i].x);
@@ -239,7 +246,7 @@ int freeLinearSystems(DATA *data, threadData_t *threadData)
     free(linsys[i].min);
     free(linsys[i].max);
 
-    switch(data->simulationInfo.lsMethod)
+    switch(data->simulationInfo->lsMethod)
     {
     case LS_LAPACK:
       freeLapackData(&linsys[i].solverData);
@@ -255,6 +262,9 @@ int freeLinearSystems(DATA *data, threadData_t *threadData)
 #ifdef WITH_UMFPACK
     case LS_UMFPACK:
       freeUmfPackData(&linsys[i].solverData);
+      break;
+    case LS_KLU:
+      freeKluData(&linsys[i].solverData);
       break;
 #else
     case LS_UMFPACK:
@@ -299,11 +309,11 @@ int solve_linear_system(DATA *data, threadData_t *threadData, int sysNumber)
   int success;
   int retVal;
   int logLevel;
-  LINEAR_SYSTEM_DATA* linsys = &(data->simulationInfo.linearSystemData[sysNumber]);
+  LINEAR_SYSTEM_DATA* linsys = &(data->simulationInfo->linearSystemData[sysNumber]);
   struct dataLapackAndTotalPivot *defaultSolverData;
 
   rt_ext_tp_tick(&(linsys->totalTimeClock));
-  switch(data->simulationInfo.lsMethod)
+  switch(data->simulationInfo->lsMethod)
   {
   case LS_LAPACK:
     success = solveLapack(data, threadData, sysNumber);
@@ -315,6 +325,9 @@ int solve_linear_system(DATA *data, threadData_t *threadData, int sysNumber)
     break;
 #endif
 #ifdef WITH_UMFPACK
+  case LS_KLU:
+    success = solveKlu(data, threadData, sysNumber);
+    break;
   case LS_UMFPACK:
     success = solveUmfPack(data, threadData, sysNumber);
     break;
@@ -378,7 +391,7 @@ int check_linear_solutions(DATA *data, int printFailingSystems)
   TRACE_PUSH
   long i;
 
-  for(i=0; i<data->modelData.nLinearSystems; ++i)
+  for(i=0; i<data->modelData->nLinearSystems; ++i)
   {
     if(check_linear_solution(data, printFailingSystems, i))
     {
@@ -405,7 +418,7 @@ int check_linear_solutions(DATA *data, int printFailingSystems)
 int check_linear_solution(DATA *data, int printFailingSystems, int sysNumber)
 {
   TRACE_PUSH
-  LINEAR_SYSTEM_DATA* linsys = data->simulationInfo.linearSystemData;
+  LINEAR_SYSTEM_DATA* linsys = data->simulationInfo->linearSystemData;
   long j, i = sysNumber;
 
   if(linsys[i].solved == 0)
@@ -418,13 +431,13 @@ int check_linear_solution(DATA *data, int printFailingSystems, int sysNumber)
     }
     warningStreamPrintWithEquationIndexes(LOG_STDOUT, 1, indexes, "Solving linear system %d fails at time %g. For more information use -lv LOG_LS.", index, data->localData[0]->timeValue);
 
-    for(j=0; j<modelInfoGetEquation(&data->modelData.modelDataXml, (linsys[i]).equationIndex).numVar; ++j) {
+    for(j=0; j<modelInfoGetEquation(&data->modelData->modelDataXml, (linsys[i]).equationIndex).numVar; ++j) {
       int done=0;
       long k;
-      const MODEL_DATA *mData = &(data->modelData);
+      const MODEL_DATA *mData = data->modelData;
       for(k=0; k<mData->nVariablesReal && !done; ++k)
       {
-        if (!strcmp(mData->realVarsData[k].info.name, modelInfoGetEquation(&data->modelData.modelDataXml, (linsys[i]).equationIndex).vars[j]))
+        if (!strcmp(mData->realVarsData[k].info.name, modelInfoGetEquation(&data->modelData->modelDataXml, (linsys[i]).equationIndex).vars[j]))
         {
         done = 1;
         warningStreamPrint(LOG_LS, 0, "[%ld] Real %s(start=%g, nominal=%g)", j+1,
@@ -435,7 +448,7 @@ int check_linear_solution(DATA *data, int printFailingSystems, int sysNumber)
       }
       if (!done)
       {
-        warningStreamPrint(LOG_LS, 0, "[%ld] Real %s(start=?, nominal=?)", j+1, modelInfoGetEquation(&data->modelData.modelDataXml, (linsys[i]).equationIndex).vars[j]);
+        warningStreamPrint(LOG_LS, 0, "[%ld] Real %s(start=?, nominal=?)", j+1, modelInfoGetEquation(&data->modelData->modelDataXml, (linsys[i]).equationIndex).vars[j]);
       }
     }
     messageCloseWarning(LOG_STDOUT);
@@ -501,6 +514,20 @@ static void setAElementUmfpack(int row, int col, double value, int nth, void *da
   DATA_UMFPACK* sData = (DATA_UMFPACK*) linSys->solverData;
 
   infoStreamPrint(LOG_LS_V, 0, " set %d. -> (%d,%d) = %f", nth, row, col, value);
+  if (row > 0){
+    if (sData->Ap[row] == 0){
+      sData->Ap[row] = nth;
+    }
+  }
+
+  sData->Ai[nth] = col;
+  sData->Ax[nth] = value;
+}
+static void setAElementKlu(int row, int col, double value, int nth, void *data, threadData_t *threadData)
+{
+  LINEAR_SYSTEM_DATA* linSys = (LINEAR_SYSTEM_DATA*) data;
+  DATA_KLU* sData = (DATA_KLU*) linSys->solverData;
+
   if (row > 0){
     if (sData->Ap[row] == 0){
       sData->Ap[row] = nth;

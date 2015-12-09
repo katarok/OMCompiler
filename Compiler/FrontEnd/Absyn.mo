@@ -105,7 +105,6 @@ uniontype Program
    indicates the hieractical position of the program."
   record PROGRAM  "PROGRAM, the top level construct"
     list<Class>  classes "List of classes" ;
- //   list<Optimization>  optimizations "List of classes" ;
     Within       within_ "Within clause" ;
   end PROGRAM;
 end Program;
@@ -1573,11 +1572,11 @@ protected function traverseExpBidirSubExps
 algorithm
   (e, arg) := match (inExp, enterFunc, exitFunc, inArg)
     local
-      Exp e1, e2, e3;
-      Option<Exp> oe1;
+      Exp e1, e1m, e2, e2m, e3, e3m;
+      Option<Exp> oe1, oe1m;
       tuple<FuncType, FuncType, Argument> tup;
       Operator op;
-      ComponentRef cref;
+      ComponentRef cref, crefm;
       list<tuple<Exp, Exp>> else_ifs;
       list<Exp> expl;
       list<list<Exp>> mat_expl;
@@ -1596,42 +1595,42 @@ algorithm
 
     case (CREF(componentRef = cref), _, _, arg)
       equation
-        (cref, arg) = traverseExpBidirCref(cref, enterFunc, exitFunc, arg);
+        (crefm, arg) = traverseExpBidirCref(cref, enterFunc, exitFunc, arg);
       then
-        (CREF(cref), arg);
+        (if referenceEq(cref,crefm) then inExp else CREF(crefm), arg);
 
     case (BINARY(exp1 = e1, op = op, exp2 = e2), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
-        (e2, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e2m, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
       then
-        (BINARY(e1, op, e2), arg);
+        (if referenceEq(e1,e1m) and referenceEq(e2,e2m) then inExp else BINARY(e1m, op, e2m), arg);
 
     case (UNARY(op = op, exp = e1), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
       then
-        (UNARY(op, e1), arg);
+        (if referenceEq(e1,e1m) then inExp else UNARY(op, e1m), arg);
 
     case (LBINARY(exp1 = e1, op = op, exp2 = e2), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
-        (e2, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e2m, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
       then
-        (LBINARY(e1, op, e2), arg);
+        (if referenceEq(e1,e1m) and referenceEq(e2,e2m) then inExp else LBINARY(e1m, op, e2m), arg);
 
     case (LUNARY(op = op, exp = e1), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
       then
-        (LUNARY(op, e1), arg);
+        (if referenceEq(e1,e1m) then inExp else LUNARY(op, e1m), arg);
 
     case (RELATION(exp1 = e1, op = op, exp2 = e2), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
-        (e2, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e2m, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
       then
-        (RELATION(e1, op, e2), arg);
+        (if referenceEq(e1,e1m) and referenceEq(e2,e2m) then inExp else RELATION(e1m, op, e2m), arg);
 
     case (IFEXP(ifExp = e1, trueBranch = e2, elseBranch = e3,
         elseIfBranch = else_ifs), _, _, arg)
@@ -1669,11 +1668,11 @@ algorithm
 
     case (RANGE(start = e1, step = oe1, stop = e2), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
-        (oe1, arg) = traverseExpOptBidir(oe1, enterFunc, exitFunc, arg);
-        (e2, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (oe1m, arg) = traverseExpOptBidir(oe1, enterFunc, exitFunc, arg);
+        (e2m, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
       then
-        (RANGE(e1, oe1, e2), arg);
+        (if referenceEq(e1,e1m) and referenceEq(e2,e2m) and referenceEq(oe1,oe1m) then inExp else RANGE(e1m, oe1m, e2m), arg);
 
     case (END(), _, _, _) then (inExp, inArg);
 
@@ -1685,16 +1684,16 @@ algorithm
 
     case (AS(id = id, exp = e1), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
       then
-        (AS(id, e1), arg);
+        (if referenceEq(e1,e1m) then inExp else AS(id, e1m), arg);
 
     case (CONS(head = e1, rest = e2), _, _, arg)
       equation
-        (e1, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
-        (e2, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
+        (e1m, arg) = traverseExpBidir(e1, enterFunc, exitFunc, arg);
+        (e2m, arg) = traverseExpBidir(e2, enterFunc, exitFunc, arg);
       then
-        (CONS(e1, e2), arg);
+        (if referenceEq(e1,e1m) and referenceEq(e2,e2m) then inExp else CONS(e1m, e2m), arg);
 
     case (MATCHEXP(matchTy = match_ty, inputExp = e1, localDecls = match_decls,
         cases = match_cases, comment = cmt), _, _, arg)
@@ -1718,7 +1717,7 @@ algorithm
         (e1, arg) = traverseExpBidir(inExp.exp, enterFunc, exitFunc, arg);
         (e2, arg) = traverseExpBidir(inExp.index, enterFunc, exitFunc, arg);
       then
-        (DOT(e1, e2), arg);
+        (if referenceEq(inExp.exp,e1) and referenceEq(inExp.index,e2) then inExp else DOT(e1, e2), arg);
 
     else
       algorithm
@@ -2396,6 +2395,17 @@ algorithm
   name := IDENT(id);
 end className;
 
+public function isClassNamed
+  input String inName;
+  input Class inClass;
+  output Boolean outIsNamed;
+algorithm
+  outIsNamed := match inClass
+    case CLASS() then inName == inClass.name;
+    else false;
+  end match;
+end isClassNamed;
+
 public function elementSpecName
   "The ElementSpec type contains the name of the element, and this function
    extracts this name."
@@ -2612,19 +2622,75 @@ end typeSpecDimensions;
 
 public function pathString "This function simply converts a Path to a string."
   input Path path;
+  input String delimiter=".";
+  input Boolean usefq=true;
+  input Boolean reverse=false;
   output String s;
+protected
+  Path p1,p2;
+  Integer count=0, len=0, dlen=stringLength(delimiter);
+  Boolean b;
 algorithm
-  s := pathString2(path, ".");
+  // First, calculate the length of the string to be generated
+  p1 :=  if usefq then path else makeNotFullyQualified(path);
+  p2 := p1;
+  b := true;
+  while b loop
+    (p2,len,count,b) := match p2
+      case IDENT() then (p2,len+1,count+stringLength(p2.name),false);
+      case QUALIFIED() then (p2.path,len+1,count+stringLength(p2.name),true);
+      case FULLYQUALIFIED() then (p2.path,len+1,count,true);
+    end match;
+  end while;
+  s := pathStringWork(p1, (len-1)*dlen+count, delimiter, dlen, reverse);
 end pathString;
 
-public function pathStringNoQual
-  "Converts a Path to a String, but does not add a dot in front of fully
-  qualified paths."
+protected
+
+function pathStringWork
   input Path inPath;
-  output String outString;
+  input Integer len;
+  input String delimiter;
+  input Integer dlen;
+  input Boolean reverse;
+  output String s="";
+protected
+  Path p=inPath;
+  Boolean b=true;
+  Integer count=0;
+  // Allocate a string of the exact required length
+  System.StringAllocator sb=System.StringAllocator(len);
 algorithm
-  outString := pathString2(makeNotFullyQualified(inPath), ".");
-end pathStringNoQual;
+  // Fill the string
+  while b loop
+    (p,count,b) := match p
+      case IDENT()
+        algorithm
+          System.stringAllocatorStringCopy(sb, p.name, if reverse then len-count-stringLength(p.name) else count);
+        then (p,count+stringLength(p.name),false);
+      case QUALIFIED()
+        algorithm
+          System.stringAllocatorStringCopy(sb, p.name, if reverse then len-count-dlen-stringLength(p.name) else count);
+          System.stringAllocatorStringCopy(sb, delimiter, if reverse then len-count-dlen else count+stringLength(p.name));
+        then (p.path,count+stringLength(p.name)+dlen,true);
+      case FULLYQUALIFIED()
+        algorithm
+          System.stringAllocatorStringCopy(sb, delimiter, if reverse then len-count-dlen else count);
+        then (p.path,count+dlen,true);
+    end match;
+  end while;
+  // Return the string
+  s := System.stringAllocatorResult(sb,s);
+end pathStringWork;
+
+public
+
+function pathStringNoQual = pathString(usefq=false);
+
+function pathStringDefault
+  input Path path;
+  output String s = pathString(path);
+end pathStringDefault;
 
 public function pathCompare
   input Path ip1;
@@ -2717,27 +2783,6 @@ algorithm
         str;
   end match;
 end optPathString;
-
-public function pathString2 "Tail-recursive version, with string builder (stringDelimitList is optimised)"
-  input Path path;
-  input String delimiter;
-  output String outString;
-algorithm
-  outString := match (path,delimiter)
-    case (FULLYQUALIFIED(),_)
-      then "." + stringDelimitList(pathToStringList(path),delimiter);
-    else
-      then stringDelimitList(pathToStringList(path),delimiter);
-  end match;
-end pathString2;
-
-public function pathString2NoLeadingDot "Tail-recursive version, with string builder (stringDelimitList is optimised)"
-  input Path path;
-  input String delimiter;
-  output String outString;
-algorithm
-  outString := stringDelimitList(pathToStringList(path),delimiter);
-end pathString2NoLeadingDot;
 
 public function pathStringUnquoteReplaceDot
 " Changes a path to string. Uses the input string as separator.
@@ -4336,17 +4381,30 @@ public function setClassName "author: BZ
   Sets the name of the class"
   input Class inClass;
   input String newName;
-  output Class outClass;
-protected
-  Ident n;
-  Boolean p,f,e;
-  Restriction r;
-  ClassDef body;
-  Info info;
+  output Class outClass = inClass;
 algorithm
-  CLASS(_, p, f, e, r, body, info) := inClass;
-  outClass := CLASS(newName, p, f, e, r, body, info);
+  outClass := match outClass
+    case CLASS()
+      algorithm
+        outClass.name := newName;
+      then
+        outClass;
+  end match;
 end setClassName;
+
+public function setClassBody
+  input Class inClass;
+  input ClassDef inBody;
+  output Class outClass = inClass;
+algorithm
+  outClass := match outClass
+    case CLASS()
+      algorithm
+        outClass.body := inBody;
+      then
+        outClass;
+  end match;
+end setClassBody;
 
 public function crefEqual " Checks if the name of a ComponentRef is
  equal to the name of another ComponentRef, including subscripts.
@@ -5616,6 +5674,32 @@ algorithm
   res := listReverse(res);
 end mergeAnnotations2;
 
+public function mergeCommentAnnotation
+  "Merges an annotation into a Comment option."
+  input Annotation inAnnotation;
+  input Option<Comment> inComment;
+  output Option<Comment> outComment;
+algorithm
+  outComment := match inComment
+    local
+      Annotation ann;
+      Option<String> cmt;
+
+    // No comment, create a new one.
+    case NONE()
+      then SOME(COMMENT(SOME(inAnnotation), NONE()));
+
+    // A comment without annotation, insert the annotation.
+    case SOME(COMMENT(annotation_ = NONE(), comment = cmt))
+      then SOME(COMMENT(SOME(inAnnotation), cmt));
+
+    // A comment with annotation, merge the annotations.
+    case SOME(COMMENT(annotation_ = SOME(ann), comment = cmt))
+      then SOME(COMMENT(SOME(mergeAnnotations(ann, inAnnotation)), cmt));
+
+  end match;
+end mergeCommentAnnotation;
+
 function isModificationOfPath
 "returns true or false if the given path is in the list of modifications"
   input ElementArg mod;
@@ -6560,6 +6644,47 @@ algorithm
   range_exp := Util.applyOption1(range_exp, inFunc, inArg);
   outIterator := ITERATOR(name, guard_exp, range_exp);
 end traverseExpShallowIterator;
+
+public function isElementItemClass
+  input ElementItem inElement;
+  output Boolean outIsClass;
+algorithm
+  outIsClass := match inElement
+    case ELEMENTITEM(element = ELEMENT(specification = CLASSDEF())) then true;
+    else false;
+  end match;
+end isElementItemClass;
+
+public function isElementItemClassNamed
+  input String inName;
+  input ElementItem inElement;
+  output Boolean outIsNamed;
+algorithm
+  outIsNamed := match inElement
+    local
+      String name;
+
+    case ELEMENTITEM(element = ELEMENT(specification = CLASSDEF(
+      class_ = CLASS(name = name)))) then name == inName;
+    else false;
+  end match;
+end isElementItemClassNamed;
+
+public function isEmptyClassPart
+  input ClassPart inClassPart;
+  output Boolean outIsEmpty;
+algorithm
+  outIsEmpty := match inClassPart
+    case PUBLIC(contents = {}) then true;
+    case PROTECTED(contents = {}) then true;
+    case CONSTRAINTS(contents = {}) then true;
+    case EQUATIONS(contents = {}) then true;
+    case INITIALEQUATIONS(contents = {}) then true;
+    case ALGORITHMS(contents = {}) then true;
+    case INITIALALGORITHMS(contents = {}) then true;
+    else false;
+  end match;
+end isEmptyClassPart;
 
 annotation(__OpenModelica_Interface="frontend");
 end Absyn;

@@ -231,6 +231,17 @@ algorithm
   end match;
 end checkFMIVersion;
 
+public function isFMIVersion10 "Checks if the FMI version is 1.0."
+  input String inFMUVersion;
+  output Boolean success;
+algorithm
+  success := match (inFMUVersion)
+    case ("1") then true;
+    case ("1.0") then true;
+    else false;
+  end match;
+end isFMIVersion10;
+
 public function isFMIVersion20 "Checks if the FMI version is 2.0."
   input String inFMUVersion;
   output Boolean success;
@@ -249,9 +260,21 @@ algorithm
   success := match (inFMIType)
     case ("me") then true;
     case ("cs") then true;
+    case ("me_cs") then true;
     else false;
   end match;
 end checkFMIType;
+
+public function isFMIMEType "Checks if FMU type is model exchange"
+  input String inFMIType;
+  output Boolean success;
+algorithm
+  success := match (inFMIType)
+    case ("me") then true;
+    case ("me_cs") then true;
+    else false;
+  end match;
+end isFMIMEType;
 
 public function isFMICSType "Checks if FMU type is co-simulation"
   input String inFMIType;
@@ -259,6 +282,7 @@ public function isFMICSType "Checks if FMU type is co-simulation"
 algorithm
   success := match (inFMIType)
     case ("cs") then true;
+    case ("me_cs") then true;
     else false;
   end match;
 end isFMICSType;

@@ -5,7 +5,7 @@
 #if defined(__vxworks)
 
   /*Defines*/
-  #define PATH string
+  #define PATH std::string
 
   #include <Core/System/ISystemProperties.h>
   #include <Core/System/ISystemInitialization.h>
@@ -28,6 +28,7 @@
   #include <Core/System/ISimVars.h>
   #include <Core/DataExchange/ISimVar.h>
   #include <Core/SimController/ISimData.h>
+  #include <Core/SimController/ISimObjects.h>
   #include <Core/SimulationSettings/ISimControllerSettings.h>
   #include <Core/SimController/ISimController.h>
 
@@ -47,8 +48,6 @@
 
 #elif defined(OMC_BUILD) && !defined(RUNTIME_STATIC_LINKING)
 
-
-  #include <boost/unordered_map.hpp>
   /*Factory includes*/
   #include <Core/Utils/extension/extension.hpp>
   #include <Core/Utils/extension/factory.hpp>
@@ -56,44 +55,27 @@
   #include <Core/Utils/extension/shared_library.hpp>
   #include <Core/Utils/extension/convenience.hpp>
   #include <Core/Utils/extension/factory_map.hpp>
-  #include <boost/filesystem/operations.hpp>
-  #include <boost/filesystem/path.hpp>
-  #include <boost/unordered_map.hpp>
-  #include <boost/program_options.hpp>
-  #include <string>
   /*Namespaces*/
   using namespace boost::extensions;
-  namespace fs = boost::filesystem;
-  using boost::unordered_map;
-  namespace po = boost::program_options;
   using std::string;
   /*Defines*/
-  #define PATH fs::path
+  #define PATH string
   #include "LibrariesConfig.h"
   #include <SimCoreFactory/OMCFactory/OMCFactory.h>
 
 #elif defined(OMC_BUILD) && defined(RUNTIME_STATIC_LINKING)
-  #include <boost/unordered_map.hpp>
+
   /*Factory includes*/
   #include <Core/Utils/extension/extension.hpp>
   #include <Core/Utils/extension/factory.hpp>
   #include <Core/Utils/extension/type_map.hpp>
   #include <Core/Utils/extension/shared_library.hpp>
   #include <Core/Utils/extension/convenience.hpp>
-  #include <Core/Utils/extension/factory_map.hpp>
-  #include <boost/filesystem/operations.hpp>
-  #include <boost/filesystem/path.hpp>
-  #include <boost/unordered_map.hpp>
-  #include <boost/program_options.hpp>
-  #include <string>
   /*Namespaces*/
   using namespace boost::extensions;
-  namespace fs = boost::filesystem;
-  using boost::unordered_map;
-  namespace po = boost::program_options;
   using std::string;
   /*Defines*/
-  #define PATH fs::path
+  #define PATH string
   #include "LibrariesConfig.h"
   /*interface includes*/
   #include <Core/System/ISystemProperties.h>
@@ -116,10 +98,10 @@
   #include <Core/System/ISimVars.h>
   #include <Core/DataExchange/ISimVar.h>
   #include <Core/SimController/ISimData.h>
+  #include <Core/SimController/ISimObjects.h>
   #include <Core/SimulationSettings/ISimControllerSettings.h>
   #include <Core/SimController/ISimController.h>
-  #include <SimCoreFactory/OMCFactory/OMCFactory.h>
-  //#include <SimCoreFactory/OMCFactory/StaticOMCFactory.h>
+
 
 
 #else
@@ -127,4 +109,3 @@
 #endif
 
 /** @} */ // end of simcorefactoriesPolicies
-

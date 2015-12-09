@@ -10,7 +10,13 @@
 
 extern "C" ISimController* createSimController(PATH library_path, PATH modelicasystem_path);
 extern "C" ISettingsFactory* createSettingsFactory(PATH library_path,PATH modelicasystem_path);
-extern "C" IAlgLoopSolverFactory* createAlgLoopSolverFactory(IGlobalSettings* globalSettings,PATH library_path,PATH modelicasystem_path);
+
+extern "C" IAlgLoopSolverFactory* createAlgLoopSolverFactoryFunction(IGlobalSettings* globalSettings,PATH library_path,PATH modelicasystem_path);
+
+  //shared_ptr<IAlgLoopSolverFactory> createAlgLoopSolverFactory(IGlobalSettings* globalSettings);
+
+
+
 extern "C" ISimData* createSimData();
 extern "C" ISimVars* createSimVars(size_t dim_real,size_t dim_int,size_t dim_bool, size_t dim_string,size_t dim_pre_vars,size_t dim_z,size_t z_i);
 extern "C" ISolver* createRTEuler(IMixedSystem* system, ISolverSettings* settings);
@@ -21,7 +27,9 @@ extern "C" IAlgLoopSolver* createKinsol(IAlgLoop* algLoop, INonLinSolverSettings
 extern "C" INonLinSolverSettings* createKinsolSettings();
 extern "C" IAlgLoopSolver* createNewton(IAlgLoop* algLoop, INonLinSolverSettings* settings);
 extern "C" INonLinSolverSettings* createNewtonSettings();
-extern "C" IMixedSystem* createModelicaSystem(IGlobalSettings* globalSettings, shared_ptr<IAlgLoopSolverFactory> nonlinsolver, shared_ptr<ISimData> simdata, shared_ptr<ISimVars> sim_vars);
+extern "C" IAlgLoopSolver* createBroyden(IAlgLoop* algLoop, INonLinSolverSettings* settings);
+extern "C" INonLinSolverSettings* createBroydenSettings();
+extern "C" IMixedSystem* createModelicaSystem(IGlobalSettings* globalSettings, shared_ptr<ISimObjects> simObjects);
 
 VxWorksFactory::VxWorksFactory(string library_path, string modelicasystem_path)
     : _library_path(library_path)
@@ -48,14 +56,21 @@ shared_ptr<ISettingsFactory>  VxWorksFactory::LoadSettingsFactory()
 
 shared_ptr<IAlgLoopSolverFactory>  VxWorksFactory::LoadAlgLoopSolverFactory(IGlobalSettings* globalSettings)
 {
-    IAlgLoopSolverFactory* algloopsolverFactory = createAlgLoopSolverFactory(globalSettings, _library_path, _modelicasystem_path);
+    IAlgLoopSolverFactory* algloopsolverFactory = createAlgLoopSolverFactoryFunction(globalSettings, _library_path, _modelicasystem_path);
     return shared_ptr<IAlgLoopSolverFactory>(algloopsolverFactory);
 
 }
 
-shared_ptr<IMixedSystem> VxWorksFactory::LoadSystem(IGlobalSettings* globalSettings, shared_ptr<IAlgLoopSolverFactory> nonlinsolver, shared_ptr<ISimData> simData, shared_ptr<ISimVars> simVars)
+/*
+shared_ptr<IAlgLoopSolverFactory>  VxWorksFactory::LoadAlgLoopSolverFactory(IGlobalSettings* globalSettings)
 {
-    IMixedSystem* system = createModelicaSystem(globalSettings, nonlinsolver, simData, simVars);
+	return createAlgLoopSolverFactory(globalSettings);
+}
+*/
+
+shared_ptr<IMixedSystem> VxWorksFactory::LoadSystem(IGlobalSettings* globalSettings,shared_ptr<ISimObjects> simObjects)
+{
+    IMixedSystem* system = createModelicaSystem(globalSettings, simObjects);
     return shared_ptr<IMixedSystem>(system);
 }
 
@@ -112,6 +127,10 @@ shared_ptr<IAlgLoopSolver> VxWorksFactory::LoadAlgLoopSolver(IAlgLoop* algLoop, 
   {
     algloopsolver = createKinsol(algLoop, solver_settings.get());
   }
+  else if (solver_name.compare("createBroyden") == 0)
+  {
+    algloopsolver = createBroyden(algLoop, solver_settings.get());
+  }
   else
   {
   }
@@ -129,6 +148,10 @@ shared_ptr<INonLinSolverSettings> VxWorksFactory::LoadAlgLoopSolverSettings(stri
   else if (solver_name.compare("createKinsolSettings") == 0)
   {
     solver_settings = createKinsolSettings();
+  }
+  else if (solver_name.compare("createBroydenSettings") == 0)
+  {
+    solver_settings = createBroydenSettings();
   }
   else
   {

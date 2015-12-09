@@ -275,6 +275,7 @@ package SimCode
       Boolean useSymbolicInitialization;         // true if a system to solve the initial problem symbolically is generated, otherwise false
       Boolean useHomotopy;                       // true if homotopy(...) is used during initialization
       list<SimEqSystem> initialEquations;
+      list<SimEqSystem> initialEquations_lambda0;
       list<SimEqSystem> removedInitialEquations;
       list<SimEqSystem> startValueEquations;
       list<SimEqSystem> nominalValueEquations;
@@ -814,9 +815,17 @@ package SimCodeUtil
     output list<SimCode.SimEqSystem> oEqs;
   end getDaeEqsNotPartOfOdeSystem;
 
+  function getValueReference
+    input SimCodeVar.SimVar inSimVar;
+    input SimCode.SimCode inSimCode;
+    input Boolean inElimNegAliases;
+    output String outValueReference;
+  end getValueReference;
+
   function getVarIndexListByMapping
     input HashTableCrIListArray.HashTable iVarToArrayIndexMapping;
     input DAE.ComponentRef iVarName;
+    input Boolean iColumnMajor;
     input String iIndexForUndefinedReferences;
     output list<String> oVarIndexList;
   end getVarIndexListByMapping;
@@ -824,6 +833,7 @@ package SimCodeUtil
   function getVarIndexByMapping
     input HashTableCrIListArray.HashTable iVarToArrayIndexMapping;
     input DAE.ComponentRef iVarName;
+    input Boolean iColumnMajor;
     input String iIndexForUndefinedReferences;
     output String oVarIndex;
   end getVarIndexByMapping;
@@ -838,6 +848,12 @@ package SimCodeUtil
     input list<SimCode.ClockedPartition> inPartitions;
     output list<SimCode.SubPartition> outSubPartitions;
   end getSubPartitions;
+
+  function getClockIndex
+    input SimCodeVar.SimVar simVar;
+    input SimCode.SimCode simCode;
+    output Option<Integer> clockIndex;
+  end getClockIndex;
 
   function computeDependencies
     input list<SimCode.SimEqSystem> eqs;
@@ -1280,11 +1296,12 @@ package Absyn
     end THREAD;
   end ReductionIterType;
 
-  function pathString2NoLeadingDot "Tail-recursive version, with string builder (stringDelimitList is optimised)"
+  function pathString
     input Path path;
     input String delimiter;
+    input Boolean usefq;
     output String outString;
-  end pathString2NoLeadingDot;
+  end pathString;
 
   function pathLastIdent
     input Path inPath;

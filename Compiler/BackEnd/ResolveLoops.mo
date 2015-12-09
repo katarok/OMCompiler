@@ -82,7 +82,7 @@ protected function resolveLoops_main "author: Waurich TUD 2014-01
   eqSystem can be output. All variables and equations which do not belong to a
   loop will be removed. the loops will be analysed and resolved"
   input BackendDAE.EqSystem inEqSys;
-  input BackendDAE.Shared inShared "unused";
+  input BackendDAE.Shared inShared "unused, just for dumping graphml";
   input Integer inSysIdx;
   output BackendDAE.EqSystem outEqSys;
   output BackendDAE.Shared outShared = inShared "unused";
@@ -111,13 +111,10 @@ algorithm
       varLst = BackendVariable.varList(vars);
 
       // build the incidence matrix for the whole System
-      numSimpEqs = listLength(eqLst);
-      numVars = listLength(varLst);
-      (m,mT) = BackendDAEUtil.incidenceMatrixDispatch(vars,eqs, BackendDAE.ABSOLUTE());
-
-      varAtts = List.threadMap(List.fill(false,listLength(varLst)),List.fill("",listLength(varLst)),Util.makeTuple);
-      eqAtts = List.threadMap(List.fill(false,listLength(eqLst)),List.fill("",listLength(eqLst)),Util.makeTuple);
-      HpcOmEqSystems.dumpEquationSystemBipartiteGraph2(vars,eqs,m,varAtts,eqAtts,"whole System_"+intString(inSysIdx));
+      //numSimpEqs = listLength(eqLst);
+      //numVars = listLength(varLst);
+      //(m,mT) = BackendDAEUtil.incidenceMatrixDispatch(vars,eqs, BackendDAE.ABSOLUTE());
+      BackendDump.dumpBipartiteGraphEqSystem(syst,inShared, "whole System_"+intString(inSysIdx));
         //BackendDump.dumpEquationArray(eqs,"the complete DAE");
 
       // get the linear equations and their vars
@@ -135,7 +132,7 @@ algorithm
 
       varAtts = List.threadMap(List.fill(false,numVars),List.fill("",numVars),Util.makeTuple);
       eqAtts = List.threadMap(List.fill(false,numSimpEqs),List.fill("",numSimpEqs),Util.makeTuple);
-      HpcOmEqSystems.dumpEquationSystemBipartiteGraph2(simpVars,simpEqs,m,varAtts,eqAtts,"rL_simpEqs_"+intString(inSysIdx));
+      BackendDump.dumpBipartiteGraphStrongComponent2(simpVars,simpEqs,m,varAtts,eqAtts,"rL_simpEqs_"+intString(inSysIdx));
 
       //partition graph
       partitions = arrayList(partitionBipartiteGraph(m,mT));
@@ -149,7 +146,7 @@ algorithm
 
       varAtts = List.threadMap(List.fill(false,numVars),List.fill("",numVars),Util.makeTuple);
       eqAtts = List.threadMap(List.fill(false,numSimpEqs),List.fill("",numSimpEqs),Util.makeTuple);
-      HpcOmEqSystems.dumpEquationSystemBipartiteGraph2(simpVars,simpEqs,m_cut,varAtts,eqAtts,"rL_loops_"+intString(inSysIdx));
+      BackendDump.dumpBipartiteGraphStrongComponent2(simpVars,simpEqs,m_cut,varAtts,eqAtts,"rL_loops_"+intString(inSysIdx));
 
       // handle the partitions separately, resolve the loops in the partitions, insert the resolved equation
       eqLst = resolveLoops_resolvePartitions(partitions,m_cut,mT_cut,m,mT,eqMapping,varMapping,eqLst,varLst,nonLoopEqIdcs);
@@ -165,7 +162,7 @@ algorithm
 
       varAtts = List.threadMap(List.fill(false,numVars),List.fill("",numVars),Util.makeTuple);
       eqAtts = List.threadMap(List.fill(false,numSimpEqs),List.fill("",numSimpEqs),Util.makeTuple);
-      HpcOmEqSystems.dumpEquationSystemBipartiteGraph2(simpVars,simpEqs,m_after,varAtts,eqAtts,"rL_after_"+intString(inSysIdx));
+      BackendDump.dumpBipartiteGraphStrongComponent2(simpVars,simpEqs,m_after,varAtts,eqAtts,"rL_after_"+intString(inSysIdx));
 
       eqSys = BackendDAEUtil.clearEqSyst(syst);
     then (eqSys, inSysIdx+1);
@@ -1313,12 +1310,16 @@ protected
   array<Integer> markEqs, markVars;
   list<list<Integer>> partitions;
 algorithm
-  numEqs := arrayLength(m);
-  numVars := arrayLength(mT);
-  markEqs := arrayCreate(numEqs,-1);
-  markVars := arrayCreate(numVars,-1);
-  (_,partitions) := colorNodePartitions(m,mT,{1},markEqs,markVars,1,{});
-  partitionsOut := listArray(partitions);
+    numEqs := arrayLength(m);
+    numVars := arrayLength(mT);
+  if intEq(numEqs,0) or intEq(numVars,0) then
+    partitionsOut := arrayCreate(1,{});
+  else
+    markEqs := arrayCreate(numEqs,-1);
+    markVars := arrayCreate(numVars,-1);
+    (_,partitions) := colorNodePartitions(m,mT,{1},markEqs,markVars,1,{});
+    partitionsOut := listArray(partitions);
+  end if;
 end partitionBipartiteGraph;
 
 protected function colorNodePartitions "author:Waurich TUD 2013-12
@@ -1340,7 +1341,7 @@ protected
   list<Integer> rest, vars, addEqs, eqs, part;
   list<list<Integer>> restPart, partitions;
 algorithm
-  (currNumberOut,partitionsOut) := matchcontinue(m,mT,checkNextIn,markEqs,markVars,currNumberIn,partitionsIn)
+  (currNumberOut,partitionsOut) := match (m,mT,checkNextIn,markEqs,markVars,currNumberIn,partitionsIn)
     local
     case(_,_,{0},_,_,_,_)
       equation
@@ -1392,7 +1393,7 @@ algorithm
         (currNumber,partitions) = colorNodePartitions(m,mT,{eq},markEqs,markVars,currNumberIn+1,{}::partitionsIn);
         then
           (currNumber,partitions);
-  end matchcontinue;
+  end match;
 end colorNodePartitions;
 
 protected function arrayGetIsNotPositive" outputs true if the indexed entry is not zero."
@@ -1788,6 +1789,7 @@ protected
   BackendDAE.Variables vars, daeVars;
   BackendDAE.EqSystem subSys;
   BackendDAE.AdjacencyMatrixEnhanced me, me2, meT;
+  BackendDAE.IncidenceMatrix m;
   DAE.FunctionTree funcs;
   list<BackendDAE.Equation> eqLst,eqsInLst;
   list<BackendDAE.Var> varLst;
@@ -1802,13 +1804,14 @@ algorithm
   vars := BackendVariable.listVar1(varLst);
   subSys := BackendDAEUtil.createEqSystem(vars, eqs);
   (me,meT,_,_) := BackendDAEUtil.getAdjacencyMatrixEnhancedScalar(subSys,shared,false);
+  (_,m,_,_,_) := BackendDAEUtil.getIncidenceMatrixScalar(subSys,BackendDAE.SOLVABLE(),SOME(BackendDAEUtil.getFunctions(shared)));
   ass1 := arrayCreate(size,-1);
   ass2 := arrayCreate(size,-1);
 
   // dump system as graphML
   varAtts := List.threadMap(List.fill(false,listLength(varLst)),List.map(eqIdcs,intString),Util.makeTuple);
   eqAtts := List.threadMap(List.fill(false,listLength(eqLst)),List.map(varIdcs,intString),Util.makeTuple);
-  HpcOmEqSystems.dumpEquationSystemBipartiteGraphSolve2(vars,eqs,me,varAtts,eqAtts,"shuffle_pre");
+  BackendDump.dumpBipartiteGraphStrongComponent2(vars,eqs,m,varAtts,eqAtts,"shuffle_pre");
 
   //start reshuffling
   resEqs := reshuffling_post3_selectShuffleEqs(me,meT);
@@ -1819,7 +1822,7 @@ algorithm
   // dump system as graphML
   //subSys := BackendDAEUtil.createEqSystem(vars, replEqs);
   //(me2,_,_,_) := BackendDAEUtil.getAdjacencyMatrixEnhancedScalar(subSys,shared,false);
-  //HpcOmEqSystems.dumpEquationSystemBipartiteGraphSolve2(vars,replEqs,me2,varAtts,eqAtts,"shuffle_post");
+  //BackendDump.dumpBipartiteGraphStrongComponentSolvable(vars,replEqs,me2,varAtts,eqAtts,"shuffle_post");
 
   // the new eqSystem
   daeEqs := List.threadFold(eqIdcs,eqsInLst,BackendEquation.setAtIndexFirst,daeEqs);

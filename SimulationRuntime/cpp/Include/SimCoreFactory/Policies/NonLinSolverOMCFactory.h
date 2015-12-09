@@ -34,8 +34,8 @@ public:
         if(nonlin_solver.compare("newton")==0)
         {
 
-             PATH newton_path = ObjectFactory<CreationPolicy>::_library_path;
-            PATH newton_name(NEWTON_LIB);
+            fs::path newton_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path newton_name(NEWTON_LIB);
             newton_path/=newton_name;
             LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(newton_path.string(),*_non_linsolver_type_map);
             if (result != LOADER_SUCCESS)
@@ -45,10 +45,22 @@ public:
             }
             nonlin_solver_key.assign("extension_export_newton");
         }
+        else if(nonlin_solver.compare("broyden")==0)
+        {
+            fs::path broyden_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path broyden_name(BROYDEN_LIB);
+            broyden_path/=broyden_name;
+            LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(broyden_path.string(),*_non_linsolver_type_map);
+            if (result != LOADER_SUCCESS)
+            {
+                throw ModelicaSimulationError(MODEL_FACTORY,"Failed loading Broyden solver library!");
+            }
+            nonlin_solver_key.assign("extension_export_broyden");
+        }
         else if(nonlin_solver.compare("kinsol")==0)
         {
-              PATH kinsol_path = ObjectFactory<CreationPolicy>::_library_path;
-            PATH kinsol_name(KINSOL_LIB);
+            fs::path kinsol_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path kinsol_name(KINSOL_LIB);
             kinsol_path/=kinsol_name;
             LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(kinsol_path.string(),*_non_linsolver_type_map);
             if (result != LOADER_SUCCESS)
@@ -60,8 +72,8 @@ public:
         }
         else if(nonlin_solver.compare("hybrj")==0)
         {
-            PATH hybrj_path = ObjectFactory<CreationPolicy>::_library_path;
-            PATH hybrj_name(HYBRJ_LIB);
+            fs::path hybrj_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path hybrj_name(HYBRJ_LIB);
             hybrj_path/=hybrj_name;
             LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(hybrj_path.string(),*_non_linsolver_type_map);
             if (result != LOADER_SUCCESS)

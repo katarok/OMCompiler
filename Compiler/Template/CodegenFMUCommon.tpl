@@ -59,7 +59,7 @@ case SIMCODE(__) then
   let modelIdentifier = modelNamePrefix(simCode)
   <<
   <ModelExchange
-    modelIdentifier="<%modelIdentifier%>">
+    modelIdentifier="<%modelIdentifier%>"<% if Flags.isSet(FMU_EXPERIMENTAL) then ' providesDirectionalDerivative="true"'%>>
   </ModelExchange>
   >>
 end ModelExchange;
@@ -75,52 +75,52 @@ case MODELINFO(vars=SIMVARS(stateVars=stateVars)) then
   <ModelVariables>
   <%System.tmpTickReset(0)%>
   <%vars.stateVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.derivativeVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.algVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.discreteAlgVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.paramVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.aliasVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%System.tmpTickReset(0)%>
   <%vars.intAlgVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.intParamVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.intAliasVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%System.tmpTickReset(0)%>
   <%vars.boolAlgVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.boolParamVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.boolAliasVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%System.tmpTickReset(0)%>
   <%vars.stringAlgVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.stringParamVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%vars.stringAliasVars |> var =>
-    ScalarVariable(simCode, stateVars, var, FMUVersion)
+    ScalarVariable(var, simCode, stateVars, FMUVersion)
   ;separator="\n"%>
   <%System.tmpTickReset(0)%>
   <%externalFunctions(modelInfo)%>
@@ -128,7 +128,7 @@ case MODELINFO(vars=SIMVARS(stateVars=stateVars)) then
   >>
 end fmiModelVariables;
 
-template ScalarVariable(SimCode simCode, list<SimVar> stateVars, SimVar simVar, String FMUVersion)
+template ScalarVariable(SimVar simVar, SimCode simCode, list<SimVar> stateVars, String FMUVersion)
  "Generates code for ScalarVariable file for FMU target."
 ::=
 match simVar
@@ -138,16 +138,13 @@ case SIMVAR(__) then
   else if stringEq(crefStr(name),"der($dummy)") then
   <<>>
   else if isFMIVersion20(FMUVersion) then
-  //if intGt(getVariableIndex(simVar), 0) then
   <<
   <!-- Index of variable = "<%getVariableIndex(simVar)%>" -->
   <ScalarVariable
-    <%ScalarVariableAttribute2(simCode, simVar)%>>
+    <%ScalarVariableAttribute2(simVar, simCode)%>>
     <%ScalarVariableType2(simVar, stateVars)%>
   </ScalarVariable>
   >>
-  //else let valueReference = '<%System.tmpTick()%>'
-  //<<>>
   else
   <<
   <ScalarVariable
@@ -220,7 +217,7 @@ case SIMVAR(__) then
     case T_REAL(__) then '<Real<%StartString(simvar)/*%> <%ScalarVariableTypeRealAttribute(unit,displayUnit)*/%>/>'
     case T_BOOL(__) then '<Boolean<%StartString(simvar)%>/>'
     case T_STRING(__) then '<String<%StartString(simvar)%>/>'
-    case T_ENUMERATION(__) then '<Enumeration declaredType="<%Absyn.pathString2NoLeadingDot(path, ".")%>"<%StartString(simvar)%>/>'
+    case T_ENUMERATION(__) then '<Enumeration declaredType="<%Absyn.pathString(path, ".", false)%>"<%StartString(simvar)%>/>'
     else 'UNKOWN_TYPE'
 end ScalarVariableType;
 
@@ -316,27 +313,40 @@ match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
   let clocks = (clockedPartitions |> partition =>
     match partition
-    case CLOCKED_PARTITION(__) then
+    case CLOCKED_PARTITION(baseClock=baseClock, subPartitions=subPartitions) then
       match baseClock
-      case INFERRED_CLOCK() then
+      case REAL_CLOCK(interval=baseInterval as RCONST(real=bi)) then
+        (subPartitions |> subPartition =>
+          match subPartition
+          case SUBPARTITION(subClock=SUBCLOCK(factor=RATIONAL(nom=fnom, denom=fres), shift=RATIONAL(nom=snom, denom=sres))) then
+          <<
+          <Clock><Periodic
+                  baseInterval="<%bi%>"
+                  <%if intGt(fnom, 1) then 'subSampleFactor="'+fnom+'"'%>
+                  <%if intGt(snom, 0) then 'shiftCounter="'+snom+'"'%>
+                  /></Clock>
+          >>
+        ; separator="\n")
+      case INTEGER_CLOCK(intervalCounter=ic as ICONST(integer=bic), resolution=res) then
+        (subPartitions |> subPartition =>
+          match subPartition
+          case SUBPARTITION(subClock=SUBCLOCK(factor=RATIONAL(nom=fnom, denom=fres), shift=RATIONAL(nom=snom, denom=sres))) then
+          <<
+          <Clock><Periodic
+                  intervalCounter="<%bic%>"
+                  resolution="<%res%>"
+                  <%if intGt(fnom, 1) then 'subSampleFactor="'+fnom+'"'%>
+                  <%if intGt(snom, 0) then 'shiftCounter="'+snom+'"'%>
+                  /></Clock>
+          >>
+        ; separator="\n")
+      case INFERRED_CLOCK(__) then
         <<
         <Clock><Inferred/></Clock>
         >>
-      case REAL_CLOCK(interval=i as RCONST(real=val)) then
-        <<
-        <Clock><Periodic>
-          <Real interval="<%val%>" />
-        </Periodic></Clock>
-        >>
-      case INTEGER_CLOCK(intervalCounter=ic as ICONST(integer=val), resolution=res) then
-        <<
-        <Clock><Periodic>
-          <Rational intervalCounter="<%val%>" resolution="<%res%>" />
-        </Periodic></Clock>
-        >>
       else
         <<
-        <Clock/>
+        <Clock><Triggered/></Clock>
         >>
     ;separator="\n")
   match clocks
@@ -436,25 +446,28 @@ template FmiUnknownDependenciesKind(list<String> dependenciesKind)
   >>
 end FmiUnknownDependenciesKind;
 
-template ScalarVariableAttribute2(SimCode simCode, SimVar simVar)
+template ScalarVariableAttribute2(SimVar simVar, SimCode simCode)
  "Generates code for ScalarVariable Attribute file for FMU 2.0 target."
 ::=
 match simVar
   case SIMVAR(__) then
-  let valueReference = '<%System.tmpTick()%>'
+  let defaultValueReference = '<%System.tmpTick()%>'
+  let valueReference = getValueReference(simVar, simCode, false)
   let description = if comment then 'description="<%Util.escapeModelicaStringToXmlString(comment)%>"'
-  let variability = getVariability2(varKind, type_)
+  let variability = if getClockIndex(simVar, simCode) then "discrete" else getVariability2(varKind, type_)
+  let clockIndex = getClockIndex(simVar, simCode)
+  let previous = match varKind case CLOCKED_STATE(__) then '<%getVariableIndex(cref2simvar(previousName, simCode))%>'
   let caus = getCausality2(causality, varKind, isValueChangeable)
   let initial = getInitialType2(variability, caus, initialValue)
-  let previous = match varKind case CLOCKED_STATE(__) then '<%getVariableIndex(cref2simvar(previousName, simCode))%>'
   <<
   name="<%System.stringReplace(crefStrNoUnderscore(name),"$", "_D_")%>"
   valueReference="<%valueReference%>"
-  <%if boolNot(stringEq(previous, "")) then 'previous="'+previous+'"' %>
   <%description%>
   variability="<%variability%>"
   causality="<%caus%>"
-  <%if boolNot(stringEq(initial, "")) then 'initial="'+initial+'"' %>
+  <%if boolNot(stringEq(clockIndex, "")) then 'clockIndex="'+clockIndex+'"' %>
+  <%if boolNot(stringEq(previous, "")) then 'previous="'+previous+'"' %>
+  <%if boolNot(stringEq(initial, "")) then match aliasvar case SimCodeVar.ALIAS(__) then "" else 'initial="'+initial+'"' %>
   >>
 end ScalarVariableAttribute2;
 
@@ -543,7 +556,7 @@ case SIMVAR(__) then
     case T_INTEGER(__) then '<Integer<%ScalarVariableTypeCommonAttribute2(simvar, stateVars)%>/>'
     case T_BOOL(__) then '<Boolean<%ScalarVariableTypeCommonAttribute2(simvar, stateVars)%>/>'
     case T_STRING(__) then '<String<%ScalarVariableTypeCommonAttribute2(simvar, stateVars)%>/>'
-    case T_ENUMERATION(__) then '<Enumeration declaredType="<%Absyn.pathString2NoLeadingDot(path, ".")%>"<%ScalarVariableTypeCommonAttribute2(simvar, stateVars)%>/>'
+    case T_ENUMERATION(__) then '<Enumeration declaredType="<%Absyn.pathString(path, ".", false)%>"<%ScalarVariableTypeCommonAttribute2(simvar, stateVars)%>/>'
     else 'UNKOWN_TYPE'
 end ScalarVariableType2;
 
@@ -561,6 +574,8 @@ end ScalarVariableTypeCommonAttribute2;
 template StartString2(SimVar simvar)
 ::=
 match simvar
+case SIMVAR(aliasvar = SimCodeVar.ALIAS(__)) then
+  ''
 case SIMVAR(initialValue = initialValue, varKind = varKind, causality = causality, type_ = type_, isValueChangeable = isValueChangeable) then
   match initialValue
     case SOME(e as ICONST(__)) then ' start="<%initValXml(e)%>"'
@@ -672,7 +687,7 @@ match type_
   case T_ENUMERATION(__) then
   if isFMIVersion20(FMUVersion) then
   <<
-  <SimpleType name="<%Absyn.pathString2NoLeadingDot(path, ".")%>">
+  <SimpleType name="<%Absyn.pathString(path, ".", false)%>">
     <Enumeration>
       <%names |> name hasindex i0 fromindex 1 => '<Item name="<%name%>" value="<%i0%>"/>' ;separator="\n"%>
     </Enumeration>
@@ -680,7 +695,7 @@ match type_
   >>
   else
   <<
-  <Type name="<%Absyn.pathString2NoLeadingDot(path, ".")%>">
+  <Type name="<%Absyn.pathString(path, ".", false)%>">
     <EnumerationType>
       <%names |> name => '<Item name="<%name%>"/>' ;separator="\n"%>
     </EnumerationType>

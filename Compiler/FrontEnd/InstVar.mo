@@ -586,7 +586,7 @@ algorithm
       // Userdefined array type, e.g. type Point = Real[3].
       type_mods := liftUserTypeMod(type_mods, inDimensions);
       dims := listAppend(inDimensions, dims);
-      mod := Mod.merge(inMod, type_mods, inEnv, inPrefix);
+      mod := Mod.merge(inMod, type_mods);
       attr := InstUtil.propagateClassPrefix(inAttributes, inPrefix);
     end if;
 
@@ -630,7 +630,7 @@ algorithm
       algorithm
         // Only lift modifiers without 'each'.
         if not SCode.eachBool(outMod.eachPrefix) then
-          outMod.eqModOption := liftUserTypeEqMod(outMod.eqModOption, inDims);
+          outMod.binding := liftUserTypeEqMod(outMod.binding, inDims);
           outMod.subModLst := list(liftUserTypeSubMod(s, inDims) for s in outMod.subModLst);
         end if;
       then
@@ -844,7 +844,7 @@ algorithm
         //   R1 r2(v1=1, v1=2);     // <= Here
         // end out;
         // see testsuit/mofiles/RecordBindings.mo.
-     case (cache,env,ih,store,ci_state,mod as DAE.MOD(eqModOption = NONE()),pre,n,cl as SCode.CLASS(restriction = SCode.R_RECORD(_)),attr,pf,dims,_,inst_dims,impl,comment,info,graph,csets)
+     case (cache,env,ih,store,ci_state,mod as DAE.MOD(binding = NONE()),pre,n,cl as SCode.CLASS(restriction = SCode.R_RECORD(_)),attr,pf,dims,_,inst_dims,impl,comment,info,graph,csets)
       equation
         true = ClassInf.isFunction(ci_state);
         InstUtil.checkFunctionVar(n, attr, pf, info);
@@ -882,13 +882,13 @@ algorithm
 
     // mahge: function variables with eqMod modifications.
     // FIXHERE: They might have subMods too (variable attributes). see testsuite/mofiles/Sequence.mo
-    case (cache,env,ih,store,ci_state,mod as DAE.MOD(eqModOption = SOME(_)),pre,n,cl,attr,pf,dims,_,inst_dims,impl,comment,info,graph,csets)
+    case (cache,env,ih,store,ci_state,mod as DAE.MOD(binding = SOME(_)),pre,n,cl,attr,pf,dims,_,inst_dims,impl,comment,info,graph,csets)
       equation
         true = ClassInf.isFunction(ci_state);
         InstUtil.checkFunctionVar(n, attr, pf, info);
 
         //get the equation modification
-        SOME(DAE.TYPED(e,_,p,_,_)) = Mod.modEquation(mod);
+        SOME(DAE.TYPED(e,_,p,_)) = Mod.modEquation(mod);
         //Instantiate type of the component, skip dae/not flattening (but extract functions)
         // adrpo: do not send in the modifications as it will fail if the modification is an ARRAY.
         //        anyhow the modifications are handled below.
@@ -955,7 +955,7 @@ algorithm
         (cache, env, ih, store, dae, csets, ty, graph);
 
     // Array variables with unknown dimensions, e.g. Real x[:] = [some expression that can be used to determine dimension].
-    case (cache,env,ih,store,ci_state,(mod as DAE.MOD(eqModOption = SOME(DAE.TYPED(_,_,_,_,_)))),pre,n,cl,attr,pf,
+    case (cache,env,ih,store,ci_state,(mod as DAE.MOD(binding = SOME(DAE.TYPED()))),pre,n,cl,attr,pf,
         ((dim as DAE.DIM_UNKNOWN()) :: dims),idxs,inst_dims,impl,comment,info,graph, csets)
       equation
         true = Config.splitArrays();
@@ -972,7 +972,7 @@ algorithm
         (cache,compenv,ih,store,dae,csets,ty_1,graph);
 
     // Array variables with unknown dimensions, non-expanding case
-    case (cache,env,ih,store,ci_state,(mod as DAE.MOD(eqModOption = SOME(DAE.TYPED(_,_,_,_,_)))),pre,n,cl,attr,pf,
+    case (cache,env,ih,store,ci_state,(mod as DAE.MOD(binding = SOME(DAE.TYPED()))),pre,n,cl,attr,pf,
       ((dim as DAE.DIM_UNKNOWN()) :: dims),idxs,inst_dims,impl,comment,info,graph, csets)
       equation
         false = Config.splitArrays();
@@ -1123,7 +1123,7 @@ algorithm
         idxs = listReverse(idxs);
         ci_state = ClassInf.start(res, Absyn.IDENT(cls_name));
         predims = List.lastListOrEmpty(inInstDims);
-        pre = PrefixUtil.prefixAdd(inName, predims, idxs, inPrefix, vt, ci_state);
+        pre = PrefixUtil.prefixAdd(inName, predims, idxs, inPrefix, vt, ci_state, inInfo);
         (cache, env_1, ih, store, dae1, csets, ty,_, opt_attr, graph) =
           Inst.instClass(cache, env, ih, store, inMod, pre, inClass, inInstDims,
             inImpl, InstTypes.INNER_CALL(), inGraph, inSets);
@@ -1250,7 +1250,7 @@ algorithm
       DAE.DAElist dae, cls_dae;
 
     // Constant with binding.
-    case (_, _, SCode.CONST(), DAE.MOD(eqModOption = SOME(DAE.TYPED())),
+    case (_, _, SCode.CONST(), DAE.MOD(binding = SOME(DAE.TYPED())),
         _, _, _, _)
       equation
         dae = DAEUtil.joinDaes(inClassDae, inDae);
@@ -1268,7 +1268,7 @@ algorithm
     // So instead we fix it here by moving the equation generated from eqMod modification for each element back to the
     // declaration of the element. Then removing the equation. This is done in the function moveBindings.
     // SEE testsuit/records/RecordBindingsOrdered.mo and RecordBindingsOrderedSimple.mo
-    case (_, DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(_)), _, DAE.MOD(eqModOption = SOME(DAE.TYPED(modifierAsExp = DAE.CREF(_, _)))),
+    case (_, DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(_)), _, DAE.MOD(binding = SOME(DAE.TYPED(modifierAsExp = DAE.CREF(_, _)))),
         _, _, _, _)
       equation
         dae = InstBinding.instModEquation(inCref, inType, inMod, inSource, inImpl);
@@ -1278,7 +1278,7 @@ algorithm
       then
         dae;
 
-    case (_, DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(_)), _, DAE.MOD(eqModOption = SOME(DAE.TYPED(modifierAsExp = DAE.CAST(exp=DAE.CREF(_, _))))),
+    case (_, DAE.T_COMPLEX(complexClassType = ClassInf.RECORD(_)), _, DAE.MOD(binding = SOME(DAE.TYPED(modifierAsExp = DAE.CAST(exp=DAE.CREF(_, _))))),
         _, _, _, _)
       equation
         dae = InstBinding.instModEquation(inCref, inType, inMod, inSource, inImpl);
@@ -1288,7 +1288,7 @@ algorithm
       then dae;
 
     // Parameter with binding.
-    case (_, _, SCode.PARAM(), DAE.MOD(eqModOption = SOME(DAE.TYPED())),
+    case (_, _, SCode.PARAM(), DAE.MOD(binding = SOME(DAE.TYPED())),
         _, _, _, _)
       equation
         dae = InstBinding.instModEquation(inCref, inType, inMod, inSource, inImpl);
@@ -1429,7 +1429,7 @@ algorithm
     case DAE.NAMEMOD(ident = "quantity") then ();
 
     case DAE.NAMEMOD(ident = name, mod = DAE.MOD(eachPrefix = SCode.NOT_EACH(),
-        eqModOption = eqmod))
+        binding = eqmod))
       equation
         name = inIdent + "." + name;
         true = checkArrayModBindingDimSize(eqmod, inDimension, inPrefix, name, inInfo);
@@ -1557,7 +1557,7 @@ algorithm
     case (cache,env,ih,store,(ClassInf.FUNCTION()),mod,pre,n,(cl,_),_,_,dim,_,_,inst_dims,_,_,_,graph, csets)
       equation
         true = Expression.dimensionUnknownOrExp(dim);
-        SOME(DAE.TYPED(e,_,p,_,_)) = Mod.modEquation(mod);
+        SOME(DAE.TYPED(modifierAsExp = e, properties = p)) = Mod.modEquation(mod);
         (cache,env_1,ih,store,_,_,ty,_,_,graph) =
           Inst.instClass(cache,env,ih,store, mod, pre, cl, inst_dims, true, InstTypes.INNER_CALL(), graph, csets) "Which has an expression binding";
         ty_1 = Types.simplifyType(ty);
@@ -1589,9 +1589,16 @@ algorithm
     case (cache,env,ih,store,ci_state,_,pre,n,(cl,attr),pf,_,DAE.DIM_INTEGER(0),dims,idxs,inst_dims,impl,comment,_,graph, csets)
       equation
         ErrorExt.setCheckpoint("instArray Real[0]");
-        s = DAE.INDEX(DAE.ICONST(0));
+        e = DAE.ICONST(0);
+        s = DAE.INDEX(e);
+        // Normal modifiers doesn't really matter since the empty array will be
+        // removed anyway, and causes issues since you can't look up an element
+        // in an empty array. But redeclares are still needed to get the correct
+        // types, so we filter out only the redeclares.
+        mod = Mod.filterRedeclares(inMod);
+        mod = Mod.lookupIdxModification(mod, e);
         (cache,compenv,ih,store,_,csets,ty,graph) =
-           instVar2(cache,env,ih,store, ci_state, DAE.NOMOD(), pre, n, cl, attr,pf, dims, (s :: idxs), inst_dims, impl, comment,info,graph, csets);
+           instVar2(cache,env,ih,store, ci_state, mod, pre, n, cl, attr,pf, dims, (s :: idxs), inst_dims, impl, comment,info,graph, csets);
         ErrorExt.rollBack("instArray Real[0]");
       then
         (cache,compenv,ih,store,DAE.emptyDae,csets,ty,graph);
@@ -1632,7 +1639,7 @@ algorithm
     case (_,_,_,_,ci_state,mod,pre,n,(_,_),_,i,_,_,idxs,_,_,_,_,_,_)
       equation
         failure(_ = Mod.lookupIdxModification(mod, DAE.ICONST(i)));
-        str1 = PrefixUtil.printPrefixStrIgnoreNoPre(PrefixUtil.prefixAdd(n, {}, {}, pre, SCode.VAR(), ci_state));
+        str1 = PrefixUtil.printPrefixStrIgnoreNoPre(PrefixUtil.prefixAdd(n, {}, {}, pre, SCode.VAR(), ci_state, info));
         str2 = "[" + stringDelimitList(List.map(idxs, ExpressionDump.printSubscriptStr), ", ") + "]";
         str3 = Mod.prettyPrintMod(mod, 1);
         str4 = PrefixUtil.printPrefixStrIgnoreNoPre(pre) + "(" + n + str2 + "=" + str3 + ")";
@@ -1736,7 +1743,7 @@ algorithm
           pf,i,dims,idxs,_,impl,comment,_,graph, _, _)
       equation
         true = i > 0;
-        (_,clBase,_) = Lookup.lookupClass(cache, env, path, true);
+        (_,clBase,_) = Lookup.lookupClass(cache, env, path, SOME(cl.info));
         /* adrpo: TODO: merge also the attributes, i.e.:
            type A = input discrete flow Integer[3];
            A x; <-- input discrete flow IS NOT propagated even if it should. FIXME!
@@ -1746,7 +1753,7 @@ algorithm
         scodeMod = InstUtil.chainRedeclares(mod, scodeMod);
 
         (_,mod2) = Mod.elabMod(cache, env, ih, pre, scodeMod, impl, Mod.DERIVED(path), info);
-        mod3 = Mod.merge(mod, mod2, env, pre);
+        mod3 = Mod.merge(mod, mod2);
         e = DAE.ICONST(i);
         mod_1 = Mod.lookupIdxModification(mod3, e);
         s = DAE.INDEX(e);

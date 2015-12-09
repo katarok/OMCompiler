@@ -1281,16 +1281,16 @@ algorithm
 end compareTasksByWeighting;
 
 protected function compareTasksByEqIdc "author: marcusw
-  Compare the given tasks by their equation indices. If the first equation of task1 has a higher index than the first equation of task 2, true is returned."
+  Compare the given tasks by their equation indices. If the last equation of task1 has a higher index than the last equation of task 2, true is returned."
   input HpcOmSimCode.Task iTask1;
   input HpcOmSimCode.Task iTask2;
   output Boolean oResult;
 protected
-  Integer eqIdxTask1, eqIdxTask2;
+  list<Integer> eqIdcTask1, eqIdcTask2;
 algorithm
   oResult := match(iTask1,iTask2)
-    case(HpcOmSimCode.CALCTASK(eqIdc=eqIdxTask1::_), HpcOmSimCode.CALCTASK(eqIdc=eqIdxTask2::_))
-      then intGt(eqIdxTask1,eqIdxTask2);
+    case(HpcOmSimCode.CALCTASK(eqIdc=eqIdcTask1), HpcOmSimCode.CALCTASK(eqIdc=eqIdcTask2))
+      then intGt(List.last(eqIdcTask1),List.last(eqIdcTask2));
     else
       equation
         Error.addMessage(Error.INTERNAL_ERROR, {"HpcOmScheduler.compareTasksByEqIdc can only compare CALCTASKs with at least one equation index! Task 1 has type " + getTaskTypeString(iTask1) + " and task 2 has type " + getTaskTypeString(iTask2)});
@@ -1631,9 +1631,8 @@ author: Waurich TUD 2014-07"
 algorithm
   taskLstOut := matchcontinue(level,iMeta,iSccSimEqMapping)
     local
-      list<Integer> section,simEqSysIdcs, compLst;
-      list<list<Integer>> sections, sectionSimEqSysIdcs;
-      list<list<list<Integer>>> sectionComps, sectionSimEqSys;
+      list<Integer> section, compLst;
+      list<list<Integer>> sections;
       array<list<Integer>> inComps;
       HpcOmSimCode.Task task;
       HpcOmSimCode.TaskList taskLst;
@@ -1641,20 +1640,15 @@ algorithm
       equation
         // generate a serial section
         compLst = List.flatten(List.map1(section,Array.getIndexFirst,inComps));
-        simEqSysIdcs = getSimEqSysIdcsForCompLst(compLst,iSccSimEqMapping);
         //simEqSysIdcs = List.sort(simEqSysIdcs,intGt);
-        task = makeCalcLevelTask(simEqSysIdcs,section);
+        task = makeCalcLevelTask(section,inComps,iSccSimEqMapping);
         taskLst = HpcOmSimCode.SERIALTASKLIST({task}, true);
     then taskLst;
     case(_::_,HpcOmTaskGraph.TASKGRAPHMETA(inComps=inComps),_)
       equation
         // generate parallel sections
-        sectionComps = List.mapList1_1(level,Array.getIndexFirst,inComps);
-        sectionComps = List.mapList1_1(sectionComps,List.sort,intGt);
-        sectionSimEqSys = List.map1(sectionComps,getSimEqSysIdcsForNodeLst,iSccSimEqMapping);
-        sectionSimEqSysIdcs = List.map(sectionSimEqSys,List.flatten);
         //sectionSimEqSysIdcs = List.map1(sectionSimEqSysIdcs,List.sort,intGt);
-        taskLst = makeCalcLevelParTaskLst(sectionSimEqSysIdcs,level);
+        taskLst = makeCalcLevelParTaskLstForMergedNodes(level,iSccSimEqMapping,inComps);
     then taskLst;
   end matchcontinue;
 end BLS_generateSchedule;
@@ -1925,52 +1919,49 @@ end deleteIntListMembers;
 //-----------------
 // Level Scheduling
 //-----------------
-public function createLevelSchedule "function createLevelSchedule
-  author: waurich TUD
-  Creates a level scheduling for the given graph"
+public function createLevelSchedule
+  "author: marcusw
+  Creates a level scheduling for the given graph."
   input HpcOmTaskGraph.TaskGraph iGraph;
   input HpcOmTaskGraph.TaskGraphMeta iMeta;
   input array<list<Integer>> iSccSimEqMapping; //Maps each scc to a list of simEqs
   output HpcOmSimCode.Schedule oSchedule;
   output HpcOmTaskGraph.TaskGraphMeta oMeta;
 protected
-  list<Integer> startNodes, levelAss;
-  list<list<Integer>> level;
-  list<list<list<Integer>>> levelComps,SCCs;  //level<node<tasks<components or simEqSys>>>
-  array<list<Integer>> inComps;
-  list<HpcOmSimCode.TaskList> levelTasks;
-  HpcOmTaskGraph.TaskGraph graphT;
-  array<tuple<Integer,Real>> exeCosts;
-  array<Integer> nodeMark;
-  array<HpcOmTaskGraph.Communications> commCosts;
-  array<tuple<Integer,Integer,Integer>> varCompMapping, eqCompMapping; //Map each variable to the scc that solves her
-  array<String> compNames, compDescs;
-  array<list<Integer>> compParamMapping;
-  array<HpcOmTaskGraph.ComponentInfo> compInformations;
+  list<list<Integer>> levelTasks;
+  HpcOmSimCode.Schedule tmpSchedule;
+  list<HpcOmSimCode.TaskList> levelTaskLists;
 algorithm
-  HpcOmTaskGraph.TASKGRAPHMETA(inComps=inComps,varCompMapping=varCompMapping,eqCompMapping=eqCompMapping,compParamMapping=compParamMapping,compNames=compNames,compDescs=compDescs,exeCosts=exeCosts, commCosts=commCosts, compInformations=compInformations) := iMeta;
-
-  graphT := BackendDAEUtil.transposeMatrix(iGraph,arrayLength(iGraph));
-  //(_,startNodes) := List.filterOnTrueSync(arrayList(graphT),listEmpty,List.intRange(arrayLength(graphT)));
-  //startNodes := HpcOmTaskGraph.getRootNodes(iGraph);
-  //print("startnodes "+stringDelimitList(List.map(startNodes,intString),",")+"\n");
-  //level := getGraphLevel(iGraph,{startNodes});
-  level := HpcOmTaskGraph.getLevelNodes(iGraph);
-  //print("level: \n"+stringDelimitList(List.map(level,intListString),"\n")+"\n");
-  if Flags.isSet(Flags.HPCOM_DUMP) then
-    print("number of level: "+intString(listLength(level))+"\nnumber of processors :"+intString(Flags.getConfigInt(Flags.NUM_PROC))+"\n");
-  end if;
-  levelComps := List.mapList1_1(level,Array.getIndexFirst,inComps);
-  //levelComps := List.mapList1_1(levelComps,List.sort,intGt);
-  SCCs := List.map1(levelComps,getSimEqSysIdcsForNodeLst,iSccSimEqMapping);
-  levelTasks := List.threadMap(SCCs,List.mapList(level,List.create),makeCalcLevelParTaskLst);
-  oSchedule := HpcOmSimCode.LEVELSCHEDULE(levelTasks, false);
-
-  //update nodeMark for graphml representation
-  nodeMark := arrayCreate(arrayLength(inComps),-1);
-  ((_,nodeMark)) := List.fold(level,getLevelAssignment,(1,nodeMark));
-  oMeta := HpcOmTaskGraph.TASKGRAPHMETA(inComps,varCompMapping,eqCompMapping,compParamMapping,compNames,compDescs,exeCosts,commCosts,nodeMark,compInformations);
+  levelTasks := HpcOmTaskGraph.getLevelNodes(iGraph);
+  levelTaskLists := List.fold(levelTasks, function createLevelScheduleForLevel(iGraph=iGraph, iMeta=iMeta, iSccSimEqMapping=iSccSimEqMapping), {});
+  levelTaskLists := listReverse(levelTaskLists);
+  oSchedule := HpcOmSimCode.LEVELSCHEDULE(levelTaskLists,false);
+  oMeta := iMeta;
 end createLevelSchedule;
+
+public function createLevelScheduleForLevel "author: marcusw
+  Handles all tasks of one level."
+  input list<Integer> iTasksOfLevel;
+  input HpcOmTaskGraph.TaskGraph iGraph;
+  input HpcOmTaskGraph.TaskGraphMeta iMeta;
+  input array<list<Integer>> iSccSimEqMapping; //Maps each scc to a list of simEqs
+  input list<HpcOmSimCode.TaskList> iLevelTaskLists;
+  output list<HpcOmSimCode.TaskList> oLevelTaskLists;
+protected
+  array<tuple<Integer, Real>> exeCosts;
+  HpcOmSimCode.TaskList taskList;
+  array<list<Integer>> inComps;
+  list<Integer> sortedTasksOfLevel;
+  list<HpcOmSimCode.Task> tasksOfLevel;
+algorithm
+  HpcOmTaskGraph.TASKGRAPHMETA(exeCosts=exeCosts,inComps=inComps) := iMeta;
+  //we should not sort the tasks regarding their size, because it seems that the first N tasks are scheduled to thread 1 and the next N tasks are scheduled
+  //to thread 2 and so on
+  //sortedTasksOfLevel := List.sort(iTasksOfLevel, function HpcOmTaskGraph.compareTasksByExecTime(iExeCosts=exeCosts, iTaskComps=inComps, iDescending=true));
+  sortedTasksOfLevel := iTasksOfLevel;
+  taskList := makeCalcLevelParTaskLst(sortedTasksOfLevel, iSccSimEqMapping, inComps);
+  oLevelTaskLists := taskList :: iLevelTaskLists;
+end createLevelScheduleForLevel;
 
 protected function getLevelAssignment"folding function to get a levelassignment for each node"
   input list<Integer> level;
@@ -1986,22 +1977,49 @@ algorithm
 end getLevelAssignment;
 
 protected function makeCalcLevelParTaskLst "makes a parallel list of CALCTASK_LEVEL-Tasks out of the given lists of simEqSyslst and corresponding node list"
-  input list<list<Integer>> simEqsForNodes;
-  input list<list<Integer>> nodeIdcs;
-  output HpcOmSimCode.TaskList tasksOut;
+  input list<Integer> iNodeIdc;
+  input array<list<Integer>> iSccSimEqMapping; //Maps each scc to a list of simEqs
+  input array<list<Integer>> iNodeSccMapping; // maps nodeIdx to a list of SCCs
+  output HpcOmSimCode.TaskList oTasks;
+protected
+  list<list<Integer>> tmpList = {};
+  Integer nodeIdx;
+algorithm
+  for nodeIdx in listReverse(iNodeIdc) loop
+    tmpList := {nodeIdx}::tmpList;
+  end for;
+  oTasks := makeCalcLevelParTaskLstForMergedNodes(tmpList, iSccSimEqMapping, iNodeSccMapping);
+end makeCalcLevelParTaskLst;
+
+protected function makeCalcLevelParTaskLstForMergedNodes "makes a parallel list of CALCTASK_LEVEL-Tasks out of the given lists of simEqSyslst and corresponding node list"
+  input list<list<Integer>> iNodeIdc;
+  input array<list<Integer>> iSccSimEqMapping; //Maps each scc to a list of simEqs
+  input array<list<Integer>> iNodeSccMapping; // maps nodeIdx to a list of SCCs
+  output HpcOmSimCode.TaskList oTasks;
 protected
   list<HpcOmSimCode.Task> tmpList;
 algorithm
-  tmpList := List.threadMap(simEqsForNodes,nodeIdcs, makeCalcLevelTask);
-  tasksOut := HpcOmSimCode.PARALLELTASKLIST(tmpList);
-end makeCalcLevelParTaskLst;
+  tmpList := List.map(iNodeIdc, function makeCalcLevelTask(iNodeSccMapping=iNodeSccMapping, iSccSimEqMapping=iSccSimEqMapping));
+  oTasks := HpcOmSimCode.PARALLELTASKLIST(tmpList);
+end makeCalcLevelParTaskLstForMergedNodes;
 
 protected function makeCalcLevelTask" makes a CALCTASK_LEVEL for the given list of SimEqSys and a nodeIdx"
-  input list<Integer> simEqs;
-  input list<Integer> nodeIdx;
-  output HpcOmSimCode.Task taskOut;
+  input list<Integer> iNodeIdc;
+  input array<list<Integer>> iNodeSccMapping; // maps nodeIdx to a list of SCCs
+  input array<list<Integer>> iSccSimEqMapping; //maps SCC-index to a list of sim-equations
+  output HpcOmSimCode.Task oTask;
+protected
+  list<Integer> simEqs = {};
+  list<Integer> sccs;
+  Integer sccIdx;
 algorithm
-  taskOut := HpcOmSimCode.CALCTASK_LEVEL(simEqs,nodeIdx,NONE());
+  for nodeIdx in iNodeIdc loop
+    sccs := arrayGet(iNodeSccMapping, nodeIdx);
+    for sccIdx in sccs loop
+      simEqs := listAppend(simEqs, arrayGet(iSccSimEqMapping, sccIdx));
+    end for;
+  end for;
+  oTask := HpcOmSimCode.CALCTASK_LEVEL(simEqs,iNodeIdc,NONE());
 end makeCalcLevelTask;
 
 public function makeCalcTask" makes a CALCTASK for the given list of SimEqSys and a nodeIdx"
@@ -2114,7 +2132,7 @@ algorithm
   levelExecCosts := HpcOmTaskGraph.getCostsForContractedNodes(iTasksOfLevel, exeCosts);
   threadReadyList := arrayCreate(iNumberOfThreads, 0.0);
   threadTaskList := arrayCreate(iNumberOfThreads, {});
-  sortedTasksOfLevel := List.sort(iTasksOfLevel, function HpcOmTaskGraph.compareTasksByExecTime(iExeCosts=exeCosts, iTaskComps=inComps));
+  sortedTasksOfLevel := List.sort(iTasksOfLevel, function HpcOmTaskGraph.compareTasksByExecTime(iExeCosts=exeCosts, iTaskComps=inComps, iDescending=true));
   _ := List.fold(sortedTasksOfLevel, function createFixedLevelScheduleForTask(iLevelExecCosts=levelExecCosts, iAdviceList=iAdviceList, iThreadReadyList=threadReadyList, iGraph=iGraph, iMeta=iMeta), threadTaskList);
   threadTaskList := Array.map(threadTaskList, listReverse);
   ((_,tasksOfLevel)) := Array.fold2(threadTaskList, createFixedLevelScheduleForLevel0, inComps, iSccSimEqMapping, (1,{}));
@@ -4943,11 +4961,17 @@ algorithm
         parentNodes = arrayGet(taskGraphTIn,node);
         childNodes = arrayGet(taskGraphIn,node);
         sameProcTasks = arrayGet(procAss,proc);
+        //print("Node: " + intString(node) + "\n");
+        //print("Children: {" + stringDelimitList(List.map(childNodes, intString), ",") + "}\n");
+        //print("Parents: {" + stringDelimitList(List.map(parentNodes, intString), ",") + "}\n");
         (_,otherParents,_) = List.intersection1OnTrue(parentNodes,sameProcTasks,intEq);
         (_,otherChildren,_) = List.intersection1OnTrue(childNodes,sameProcTasks,intEq);
+        //print("Other children: {" + stringDelimitList(List.map(otherChildren, intString), ",") + "}\n");
+        //print("Other parents: {" + stringDelimitList(List.map(otherParents, intString), ",") + "}\n");
         // keep the locks that are superfluous, remove them later
         removeLocks = getSuperfluousLocks(otherParents,node,taskAss,orderIn,numProc,allCalcTasks,inCommCosts,inComps,iSimVarMapping,removeLocksIn);
         taskLstAss = List.map6(otherParents,createDepTaskByTaskIdc,node,allCalcTasks,false,inCommCosts,inComps,iSimVarMapping);
+        //print("Locks: " + stringDelimitList(List.map(taskLstAss,dumpTask), ",") + "\n");
         //relLockDepTasks = List.map1(otherChildren,getReleaseLockString,node);
         taskLstRel = List.map6(otherChildren,createDepTaskByTaskIdcR,node,allCalcTasks,true,inCommCosts,inComps,iSimVarMapping);
 
@@ -5472,7 +5496,7 @@ end computeGraphValuesBottomUp2;
 //----------------------------
 
 protected function computeGraphValuesTopDown "traverse the graph top down (the transposed graph bottom up)
-computes the latest allowable start time (As Late As Possible) and the latest allowable compeltino time for every node in the task graph.
+computes the latest allowable start time (As Late As Possible) and the latest allowable completion time for every node in the task graph.
 author:Waurich TUD 2013-10"
   input HpcOmTaskGraph.TaskGraph iTaskGraph;
   input HpcOmTaskGraph.TaskGraphMeta iTaskGraphMeta;
@@ -5497,101 +5521,104 @@ algorithm
   lact := arrayCreate(size,-1.0);
   tdsLevel := arrayCreate(size,-1.0);
   visitedNodes := arrayCreate(size,false);
-  (alap,last,lact,tdsLevelOut) := computeGraphValuesTopDown1(endNodes,iTaskGraph,taskGraphT,iTaskGraphMeta,alap,last,lact,tdsLevel,visitedNodes);
+  computeGraphValuesTopDown1(endNodes,iTaskGraph,taskGraphT,iTaskGraphMeta,alap,last,lact,tdsLevel,visitedNodes);
   cpWithComm := Array.fold(alap,realMax,0.0);
   lastNodeInCP := Array.position(alap,cpWithComm,size);
   cp := Array.fold(last,realMax,0.0);
   alapOut := Array.map1(alap,realSubr,cpWithComm);
   lactOut := Array.map1(lact,realSubr,cp);
   lastOut := Array.map1(last,realSubr,cp);
+  tdsLevelOut := tdsLevel;
 end computeGraphValuesTopDown;
 
-protected function computeGraphValuesTopDown1 "traverses the taskGraph topdown starting with the leaf nodes of the original non-transposed graph.
+protected function computeGraphValuesTopDown1 "traverses the taskGraph topdown starting with the leaf nodes of the original non-transposed graph. This function was
+introduced to break the tail recursion and remove the matchcontinue.
+author: marcusw TUD 2015-12"
+  input list<Integer> nodesIn;
+  input HpcOmTaskGraph.TaskGraph iTaskGraph;
+  input HpcOmTaskGraph.TaskGraph iTaskGraphT;
+  input HpcOmTaskGraph.TaskGraphMeta iTaskGraphMeta;
+  input array<Real> alapIn; //updated
+  input array<Real> lastIn; //updated
+  input array<Real> lactIn; //updated
+  input array<Real> tdsLevelIn; //updated
+  input array<Boolean> visitedNodes; //updated
+protected
+  list<Integer> nodes = nodesIn;
+  array<Real> alap = alapIn;
+  array<Real> last = lastIn;
+  array<Real> lact = lactIn;
+  array<Real> tdsLevel = tdsLevelIn;
+algorithm
+  while not(listEmpty(nodes)) loop
+    if arrayGet(visitedNodes, List.first(nodes)) then
+      nodes := List.rest(nodes);
+    else
+      nodes := computeGraphValuesTopDown2(nodes,iTaskGraph,iTaskGraphT,iTaskGraphMeta,alap,last,lact,tdsLevel,visitedNodes);
+    end if;
+  end while;
+  //print("Alaps: {" + stringDelimitList(arrayList(Array.map(alap, realString)), ",") + "}\n");
+end computeGraphValuesTopDown1;
+
+protected function computeGraphValuesTopDown2 "traverses the taskGraph topdown starting with the leaf nodes of the original non-transposed graph.
 author: Waurich TUD 2013-10"
   input list<Integer> nodesIn;
   input HpcOmTaskGraph.TaskGraph iTaskGraph;
   input HpcOmTaskGraph.TaskGraph iTaskGraphT;
   input HpcOmTaskGraph.TaskGraphMeta iTaskGraphMeta;
-  input array<Real> alapIn;
-  input array<Real> lastIn;
-  input array<Real> lactIn;
-  input array<Real> tdsLevelIn;
-  input array<Boolean> visitedNodes;
-  output array<Real> alapOut;
-  output array<Real> lastOut;
-  output array<Real> lactOut;
-  output array<Real> tdsLevelOut;
+  input array<Real> alapIn; //updated
+  input array<Real> lastIn; //updated
+  input array<Real> lactIn; //updated
+  input array<Real> tdsLevelIn; //updated
+  input array<Boolean> visitedNodes; //updated
+  output list<Integer> nodesOut;
+protected
+  Boolean computeValues;
+  Integer nodeIdx, pos;
+  Real nodeExeCost, maxLevel, maxAlap, maxLast, maxLact;
+  list<Integer> rest, parentNodes, childNodes;
+  list<Real> childTDSLevels, childAlaps, childLasts, childLacts, commCostsToChilds;
+  array<Real> alap,last,lact,tdsLevel;
 algorithm
-  (alapOut,lastOut,lactOut,tdsLevelOut) := matchcontinue(nodesIn,iTaskGraph,iTaskGraphT,iTaskGraphMeta,alapIn,lastIn,lactIn,tdsLevelIn,visitedNodes)
-    local
-      Boolean computeValues;
-      Integer nodeIdx, pos;
-      Real nodeExeCost, maxLevel, maxAlap, maxLast, maxLact;
-      list<Integer> rest, parentNodes, childNodes;
-      list<Real> childTDSLevels, childAlaps, childLasts, childLacts, commCostsToChilds;
-      array<Real> alap,last,lact,tdsLevel;
-  case({},_,_,_,_,_,_,_,_)
-    then (alapIn,lastIn,lactIn,tdsLevelIn);
-  case(nodeIdx::rest,_,_,_,_,_,_,_,_)
-    equation
-      // the current Node was already handled by another branch
-      true = arrayGet(visitedNodes, nodeIdx);
-      (alap,last,lact,tdsLevel) = computeGraphValuesTopDown1(rest,iTaskGraph,iTaskGraphT,iTaskGraphMeta,alapIn,lastIn,lactIn,tdsLevelIn,visitedNodes);
-    then (alap,last,lact,tdsLevel);
-  case(nodeIdx::rest,_,_,_,_,_,_,_,_)
-    equation
-      // the current Node is a leaf node
-      childNodes = arrayGet(iTaskGraph,nodeIdx);
-      true = listEmpty(childNodes);
-      nodeExeCost = HpcOmTaskGraph.getExeCostReqCycles(nodeIdx,iTaskGraphMeta);
-      alap = arrayUpdate(alapIn,nodeIdx,nodeExeCost);
-      last = arrayUpdate(lastIn,nodeIdx,nodeExeCost);
-      lact = arrayUpdate(lactIn,nodeIdx,0.0);
-      tdsLevel = arrayUpdate(tdsLevelIn,nodeIdx,nodeExeCost);
-      parentNodes = arrayGet(iTaskGraphT,nodeIdx);
-      rest = listAppend(rest,parentNodes);
-      (alap,last,lact,tdsLevel) = computeGraphValuesTopDown1(rest,iTaskGraph,iTaskGraphT,iTaskGraphMeta,alap,last,lact,tdsLevel,visitedNodes);
-    then (alap,last,lact,tdsLevel);
-  case(nodeIdx::rest,_,_,_,_,_,_,_,_)
-    equation
-      // all of the childNodes of the current Node have been investigated
-      childNodes = arrayGet(iTaskGraph,nodeIdx);
-      childTDSLevels = List.map1(childNodes,Array.getIndexFirst,tdsLevelIn);
-      false = List.isMemberOnTrue(-1.0,childTDSLevels,realEq);
-      nodeExeCost = HpcOmTaskGraph.getExeCostReqCycles(nodeIdx,iTaskGraphMeta);
-      commCostsToChilds = List.map2rm(childNodes,HpcOmTaskGraph.getCommCostTimeBetweenNodes,nodeIdx,iTaskGraphMeta);  // only for alap
-      childAlaps = List.map1(childNodes,Array.getIndexFirst,alapIn);
-      childAlaps = List.threadMap(childAlaps,commCostsToChilds,realAdd);
-      childLasts = List.map1(childNodes,Array.getIndexFirst,lastIn);
-      childLacts = List.map1(childNodes,Array.getIndexFirst,lactIn);
-      maxLevel = List.fold(childTDSLevels,realMax,0.0);
-      maxAlap = List.fold(childAlaps,realMax,0.0);
-      maxLast = List.fold(childLasts,realMax,0.0);
-      _ = List.fold(childLacts,realMax,0.0);
-      tdsLevel = arrayUpdate(tdsLevelIn,nodeIdx,nodeExeCost + maxLevel);
-      alap = arrayUpdate(alapIn,nodeIdx,nodeExeCost + maxAlap);
-      last = arrayUpdate(lastIn,nodeIdx,nodeExeCost + maxLast);
-      lact = arrayUpdate(lactIn,nodeIdx,maxLast);
-      parentNodes = arrayGet(iTaskGraphT,nodeIdx);
-      rest = listAppend(rest,parentNodes);
-      arrayUpdate(visitedNodes, nodeIdx, true);
-      (alap,last,lact,tdsLevel) = computeGraphValuesTopDown1(rest,iTaskGraph,iTaskGraphT,iTaskGraphMeta,alap,last,lact,tdsLevel,visitedNodes);
-    then (alap,last,lact,tdsLevel);
-  case(nodeIdx::rest,_,_,_,_,_,_,_,_)
-    equation
-      // not all of the childNodes of the current Node have been investigated
-      childNodes = arrayGet(iTaskGraph,nodeIdx);
-      childTDSLevels = List.map1(childNodes,Array.getIndexFirst,tdsLevelIn);
-      true = List.isMemberOnTrue(-1.0,childTDSLevels,realEq);
-      rest = listAppend(rest,{nodeIdx});
-      (alap,last,lact,tdsLevel) = computeGraphValuesTopDown1(rest,iTaskGraph,iTaskGraphT,iTaskGraphMeta,alapIn,lastIn,lactIn,tdsLevelIn,visitedNodes);
-    then (alap,last,lact,tdsLevel);
+  nodeIdx::rest := nodesIn;
+  //print("Handling node " + intString(nodeIdx) + "\n");
+  childNodes := arrayGet(iTaskGraph,nodeIdx);
+  nodeExeCost := HpcOmTaskGraph.getExeCostReqCycles(nodeIdx,iTaskGraphMeta);
+  arrayUpdate(visitedNodes, nodeIdx, true);
+  if listEmpty(childNodes) then // the current Node is a leaf node
+    //print("Node is a leaf node\n");
+    alap := arrayUpdate(alapIn,nodeIdx,nodeExeCost);
+    last := arrayUpdate(lastIn,nodeIdx,nodeExeCost);
+    lact := arrayUpdate(lactIn,nodeIdx,0.0);
+    tdsLevel := arrayUpdate(tdsLevelIn,nodeIdx,nodeExeCost);
+    parentNodes := arrayGet(iTaskGraphT,nodeIdx);
+    nodesOut := listAppend(rest,parentNodes);
   else
-    equation
-      print("computeGraphValuesTopDown1 failed!\n");
-    then fail();
-  end matchcontinue;
-end computeGraphValuesTopDown1;
+    childTDSLevels := List.map1(childNodes,Array.getIndexFirst,tdsLevelIn);
+    if(List.isMemberOnTrue(-1.0,childTDSLevels,realEq)) then // not all of the childNodes of the current Node have been investigated
+      //print("Not all child nodes have been investigated\n");
+      nodesOut := listAppend(rest,{nodeIdx});
+      arrayUpdate(visitedNodes, nodeIdx, false); //we have to visit the node again
+    else // all of the childNodes of the current Node have been investigated
+      //print("All child nodes have been investigated\n");
+      commCostsToChilds := List.map2rm(childNodes,HpcOmTaskGraph.getCommCostTimeBetweenNodes,nodeIdx,iTaskGraphMeta);  // only for alap
+      childAlaps := List.map1(childNodes,Array.getIndexFirst,alapIn);
+      childAlaps := List.threadMap(childAlaps,commCostsToChilds,realAdd);
+      childLasts := List.map1(childNodes,Array.getIndexFirst,lastIn);
+      childLacts := List.map1(childNodes,Array.getIndexFirst,lactIn);
+      maxLevel := List.fold(childTDSLevels,realMax,0.0);
+      maxAlap := List.fold(childAlaps,realMax,0.0);
+      maxLast := List.fold(childLasts,realMax,0.0);
+      _ := List.fold(childLacts,realMax,0.0);
+      tdsLevel := arrayUpdate(tdsLevelIn,nodeIdx,nodeExeCost + maxLevel);
+      alap := arrayUpdate(alapIn,nodeIdx,nodeExeCost + maxAlap);
+      last := arrayUpdate(lastIn,nodeIdx,nodeExeCost + maxLast);
+      lact := arrayUpdate(lactIn,nodeIdx,maxLast);
+      parentNodes := arrayGet(iTaskGraphT,nodeIdx);
+      nodesOut := listAppend(rest,parentNodes);
+    end if;
+  end if;
+end computeGraphValuesTopDown2;
 
 protected function realSubr
   input Real r1;
@@ -5627,7 +5654,7 @@ algorithm
       equation
         (sLst,_) = List.mapFold(arrayList(threadTasks), dumpThreadSchedule, 1);
         s = stringDelimitList(sLst,"\n");
-        s = s + "Dependency tasks: " + stringDelimitList(List.map(outgoingDepTasks, dumpTask), "\n") + "\n";
+        s = s + "\nDependency tasks: {\n" + stringDelimitList(List.map(outgoingDepTasks, dumpTask), "") + "}\n";
         s = "THREADSCHEDULE\n"+s;
       then s;
     case(HpcOmSimCode.LEVELSCHEDULE(tasksOfLevels=tasksOfLevels))
@@ -5670,6 +5697,11 @@ algorithm
       array<list<HpcOmSimCode.Task>> threadTasks;
       Real cpCosts, cpCostsWoC, serTime, parTime, speedUp, speedUpMax;
       String criticalPathInfo;
+    case(HpcOmSimCode.EMPTYSCHEDULE(_),_,_,_,_)
+      equation
+        ((criticalPaths,cpCosts),(criticalPathsWoC,cpCostsWoC)) = HpcOmTaskGraph.getCriticalPaths(taskGraphIn,taskGraphMetaIn);
+        criticalPathInfo = HpcOmTaskGraph.dumpCriticalPathInfo((criticalPaths,cpCosts),(criticalPathsWoC,cpCostsWoC));
+      then criticalPathInfo;
     case(HpcOmSimCode.LEVELSCHEDULE(tasksOfLevels=tasksOfLevels, useFixedAssignments=false),_,_,_,_)
       equation
         criticalPathInfo = analyseScheduledTaskGraphLevel(tasksOfLevels, numProcIn, taskGraphIn,taskGraphMetaIn, getLevelParallelTime);
@@ -5885,33 +5917,26 @@ author:Waurich TUD 2013-11"
   output Real parallelTimeOut;
   output Real speedUpOut;
   output Real speedUpMaxOut;
+protected
+  Real parTime = 0.0;
+  Real serTime = 0.0;
+  Real speedUp = 0.0;
+  Real speedUpMax = 0.0;
+  Real cpCosts = 0.0;
+  Real helper = 0.0;
+  HpcOmSimCode.Schedule schedule;
 algorithm
-  (serialTimeOut,parallelTimeOut,speedUpOut,speedUpMaxOut) := matchcontinue(scheduleIn,cpCostsOption,numProc,taskGraphIn,taskGraphMetaIn)
-    local
-      Real parTime, serTime, speedUp, speedUpMax, cpCosts;
-      HpcOmSimCode.Schedule schedule;
-    case(_,NONE(),_,_,_)
-      equation
-        true = intNe(arrayLength(taskGraphIn),0); //is an ODE system
-        (_,parTime) = getFinishingTimesForSchedule(scheduleIn,numProc,taskGraphIn,taskGraphMetaIn);
-        serTime = getSerialExecutionTime(taskGraphMetaIn);
-        speedUp = serTime / parTime;
-      then
-        (serTime,parTime,speedUp,-1.0);
-    case(_,SOME(cpCosts),_,_,_)
-      equation
-        true = intNe(arrayLength(taskGraphIn),0);  //is an ODE system
-        (_,parTime) = getFinishingTimesForSchedule(scheduleIn,numProc,taskGraphIn,taskGraphMetaIn);
-        serTime = getSerialExecutionTime(taskGraphMetaIn);
-        speedUp = serTime / parTime;
-        speedUpMax = serTime / cpCosts;
-      then
-        (serTime,parTime,speedUp,speedUpMax);
-    else
-      equation
-      then
-        (0.0,0.0,0.0,0.0);
-  end matchcontinue;
+  if(intNe(arrayLength(taskGraphIn),0)) then
+    serTime := getSerialExecutionTime(taskGraphMetaIn);
+    (_,parTime) := getFinishingTimesForSchedule(scheduleIn,numProc,taskGraphIn,taskGraphMetaIn);
+    speedUp := serTime / parTime;
+    helper := Util.getOptionOrDefault(cpCostsOption, realMul(-1.0, serTime));
+    speedUpMax := realDiv(serTime, helper);
+  end if;
+  serialTimeOut := serTime;
+  parallelTimeOut := parTime;
+  speedUpOut := speedUp;
+  speedUpMaxOut := speedUpMax;
 end predictExecutionTime;
 
 public function printPredictedExeTimeInfo "function to print the information about the predicted execution times.
@@ -5969,7 +5994,7 @@ algorithm
   serialTimeOut := List.fold(exeCostsReal,realAdd,0.0);
 end getSerialExecutionTime;
 
-protected function getFinishingTimesForSchedule"computes the finishing times for the schedule. Works not for empty systems!!!
+protected function getFinishingTimesForSchedule "computes the finishing times for the schedule. Works not for empty systems!!!
 author:Waurich TUD 2013-11"
   input HpcOmSimCode.Schedule scheduleIn;
   input Integer numProc;
@@ -5996,10 +6021,10 @@ algorithm
         taskIdcs = arrayCreate(arrayLength(threadTasks),1);  // the TaskIdcs to be checked for every thread
         taskGraphT = BackendDAEUtil.transposeMatrix(taskGraphIn,arrayLength(taskGraphIn));
         checkedTasks = arrayCreate(arrayLength(taskGraphIn),HpcOmSimCode.TASKEMPTY());
-        threadTasksNew = computeTimeFinished(threadTasks,taskIdcs,1,checkedTasks,taskGraphIn,taskGraphT,taskGraphMetaIn,numProc,{});
-        finTimes = Array.map(threadTasksNew,getTimeFinishedOfLastTask);
+        computeTimeFinished(threadTasks,taskIdcs,1,checkedTasks,taskGraphIn,taskGraphT,taskGraphMetaIn,numProc,{});
+        finTimes = Array.map(threadTasks,getTimeFinishedOfLastTask);
         finTime = Array.fold(finTimes,realMax,0.0);
-        schedule = HpcOmSimCode.THREADSCHEDULE(threadTasksNew,outgoingDepTasks,{},allCalcTasks);
+        schedule = HpcOmSimCode.THREADSCHEDULE(threadTasks,outgoingDepTasks,{},allCalcTasks);
       then
         (schedule,finTime);
     case(HpcOmSimCode.LEVELSCHEDULE(_,_),_,_,_)
@@ -6045,7 +6070,7 @@ end getTimeFinishedOfLastTask;
 
 protected function computeTimeFinished  "traverses all threads bottoms up.
 author:Waurich TUD 2013-11"
-  input array<list<HpcOmSimCode.Task>> threadTasksIn;
+  input array<list<HpcOmSimCode.Task>> threadTasksIn; //updated
   input array<Integer> taskIdcsIn;
   input Integer threadIdxIn;
   input array<HpcOmSimCode.Task> checkedTasksIn;
@@ -6053,10 +6078,38 @@ author:Waurich TUD 2013-11"
   input HpcOmTaskGraph.TaskGraph taskGraphTIn;
   input HpcOmTaskGraph.TaskGraphMeta taskGraphMetaIn;
   input Integer numProc;
-  input list<Integer> closedThreads;
-  output array<list<HpcOmSimCode.Task>> threadTasksOut;
+  input list<Integer> closedThreadsIn;
+protected
+  Boolean isCalc, isComputable;
+  Integer taskIdx, nextTaskIdx;
+  Integer threadIdx = threadIdxIn;
+  array<Integer> taskIdcs;
+  list<Integer> closedThreads = closedThreadsIn;
+  HpcOmSimCode.Task task;
+  array<list<HpcOmSimCode.Task>> threadTasks = threadTasksIn;
+  array<HpcOmSimCode.Task> checkedTasks;
+  list<HpcOmSimCode.Task> thread;
 algorithm
-  threadTasksOut := matchcontinue(threadTasksIn,taskIdcsIn,threadIdxIn,checkedTasksIn,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreads)
+  while not(listLength(closedThreads) == numProc) loop
+    (threadIdx, closedThreads) := computeTimeFinished1(threadTasks, taskIdcsIn, threadIdx, checkedTasksIn, taskGraphIn, taskGraphTIn, taskGraphMetaIn, numProc, closedThreads);
+  end while;
+end computeTimeFinished;
+
+protected function computeTimeFinished1  "traverses all threads bottoms up.
+author:Waurich TUD 2013-11"
+  input array<list<HpcOmSimCode.Task>> threadTasksIn; //updated
+  input array<Integer> taskIdcsIn; //const
+  input Integer threadIdxIn;
+  input array<HpcOmSimCode.Task> checkedTasksIn; //updated
+  input HpcOmTaskGraph.TaskGraph taskGraphIn; //const
+  input HpcOmTaskGraph.TaskGraph taskGraphTIn; //const
+  input HpcOmTaskGraph.TaskGraphMeta taskGraphMetaIn; //const
+  input Integer numProc; //const
+  input list<Integer> closedThreadsIn;
+  output Integer threadIdxOut;
+  output list<Integer> closedThreadsOut;
+algorithm
+  (threadIdxOut,closedThreadsOut) := matchcontinue(threadTasksIn,taskIdcsIn,threadIdxIn,checkedTasksIn,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreadsIn)
     local
       Boolean isCalc, isComputable;
       Integer taskIdx, nextThreadIdx, nextTaskIdx;
@@ -6077,18 +6130,18 @@ algorithm
         //compute timeFinished for the task
         (threadTasks,checkedTasks,nextTaskIdx) = updateFinishingTime(task,taskIdx,threadIdxIn,threadTasksIn,checkedTasksIn,taskGraphTIn,taskGraphMetaIn);
         taskIdcs = arrayUpdate(taskIdcsIn,threadIdxIn,nextTaskIdx);
-        nextThreadIdx = getNextThreadIdx(threadIdxIn,closedThreads,numProc);
-        threadTasks = computeTimeFinished(threadTasks,taskIdcs,nextThreadIdx,checkedTasks,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreads);
+        nextThreadIdx = getNextThreadIdx(threadIdxIn,closedThreadsIn,numProc);
+        //threadTasks = computeTimeFinished(threadTasks,taskIdcs,nextThreadIdx,checkedTasks,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreadsIn);
       then
-        threadTasks;
+        (nextThreadIdx,closedThreadsIn);
     case(_,_,_,_,_,_,_,_,_)
       equation
         // next thread
         true = threadIdxIn > arrayLength(taskIdcsIn);
         nextThreadIdx = if intGe(threadIdxIn,numProc) then 1 else (threadIdxIn+1);
-        threadTasks = computeTimeFinished(threadTasksIn,taskIdcsIn,nextThreadIdx,checkedTasksIn,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreads);
+        //threadTasks = computeTimeFinished(threadTasksIn,taskIdcsIn,nextThreadIdx,checkedTasksIn,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreadsIn);
       then
-        threadTasks;
+        (nextThreadIdx,closedThreadsIn);
     case(_,_,_,_,_,_,_,_,_)
       equation
         // thread done
@@ -6096,26 +6149,19 @@ algorithm
         taskIdx = arrayGet(taskIdcsIn,threadIdxIn);
         thread = arrayGet(threadTasksIn,threadIdxIn);
         true = taskIdx > listLength(thread);
-        false = listLength(closedThreads) == numProc;
         nextThreadIdx = if intGe(threadIdxIn,numProc) then 1 else (threadIdxIn+1);
-        closedThreads1 = threadIdxIn::closedThreads;
+        closedThreads1 = threadIdxIn::closedThreadsIn;
         closedThreads1 = List.unique(closedThreads1);
-        threadTasks = computeTimeFinished(threadTasksIn,taskIdcsIn,nextThreadIdx,checkedTasksIn,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreads1);
+        //threadTasks = computeTimeFinished(threadTasksIn,taskIdcsIn,nextThreadIdx,checkedTasksIn,taskGraphIn,taskGraphTIn,taskGraphMetaIn,numProc,closedThreads1);
       then
-        threadTasks;
-    case(_,_,_,_,_,_,_,_,_)
-      equation
-        // done with all threads
-        true = listLength(closedThreads) == numProc;
-      then
-        threadTasksIn;
+        (nextThreadIdx,closedThreads1);
     else
       equation
         print("computeTimeFinished failed!\n");
       then
         fail();
   end matchcontinue;
-end computeTimeFinished;
+end computeTimeFinished1;
 
 protected function getNextThreadIdx "computes the index of the next thread that should be analysed.
 The closed threads are not possible and if the last thread is input, the first is chosen.

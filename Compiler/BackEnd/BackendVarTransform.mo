@@ -1065,6 +1065,9 @@ algorithm
       DAE.CallAttributes attr;
       DAE.Ident ident;
       HashTable2.HashTable derConst;
+      String solverMethod;
+      Integer resolution;
+      Real startInterval;
 
       // Note: Most of these functions check if a subexpression did a replacement.
       // If it did not, we do not create a new copy of the expression (to save some memory).
@@ -1157,6 +1160,30 @@ algorithm
         (expl_1,true) = replaceExpList(expl, repl, cond, {}, false);
       then
         (DAE.CALL(path,expl_1,attr),true);
+    // INTEGER_CLOCK
+    case (DAE.CLKCONST(DAE.INTEGER_CLOCK(intervalCounter=e, resolution=resolution)), repl, cond)
+      equation
+        e = replaceExp(e, repl, cond);
+      then
+        (DAE.CLKCONST(DAE.INTEGER_CLOCK(e, resolution)), true);
+    // REAL_CLOCK
+    case (DAE.CLKCONST(DAE.REAL_CLOCK(interval=e)), repl, cond)
+      equation
+        e = replaceExp(e, repl, cond);
+      then
+        (DAE.CLKCONST(DAE.REAL_CLOCK(e)), true);
+    // BOOLEAN_CLOCK
+    case (DAE.CLKCONST(DAE.BOOLEAN_CLOCK(condition=e, startInterval=startInterval)), repl, cond)
+      equation
+        e = replaceExp(e, repl, cond);
+      then
+        (DAE.CLKCONST(DAE.BOOLEAN_CLOCK(e, startInterval)), true);
+    // SOLVER_CLOCK
+    case (DAE.CLKCONST(DAE.SOLVER_CLOCK(c=e, solverMethod=solverMethod)), repl, cond)
+      equation
+        e = replaceExp(e, repl, cond);
+      then
+        (DAE.CLKCONST(DAE.SOLVER_CLOCK(e, solverMethod)), true);
     case ((e as DAE.PARTEVALFUNCTION(path,expl,tp,t)),repl,cond)
       equation
         true = replaceExpCond(cond, e);
@@ -2013,7 +2040,7 @@ algorithm
         (exp1,b) = replaceExp(exp,repl,inFuncTypeExpExpToBooleanOption);
         (exp1,_) = ExpressionSimplify.condsimplify(b,exp1);
         source = DAEUtil.addSymbolicTransformationSubstitution(b,source,exp,exp1);
-        wop1 = if b then BackendDAE.NORETCALL(exp,source) else wop;
+        wop1 = if b then BackendDAE.NORETCALL(exp1,source) else wop;
         (res1,b) =  replaceWhenOperator(res,repl,inFuncTypeExpExpToBooleanOption,replacementPerformed or b,wop1::iAcc);
       then
         (res1,b);

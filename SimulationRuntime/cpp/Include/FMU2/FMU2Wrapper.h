@@ -43,11 +43,6 @@
 #include "fmi2Functions.h"
 #include "FMU2GlobalSettings.h"
 
-// build MODEL_CLASS from MODEL_IDENTIFIER
-#define FMU2_PASTER(a, b) a ## b
-#define FMU2_CONCAT(a, b) FMU2_PASTER(a, b)
-#define MODEL_CLASS FMU2_CONCAT(MODEL_IDENTIFIER_SHORT, FMU)
-
 // define logger as macro that passes through variadic args
 #define FMU2_LOG(w, status, category, ...) \
   if ((w)->logCategories & (1 << (category))) \
@@ -107,6 +102,8 @@ class FMU2Wrapper
                                 fmi2String  value[]);
   virtual fmi2Status getClock  (const fmi2Integer clockIndex[],
                                 size_t nClockIndex, fmi2Boolean active[]);
+  virtual fmi2Status getInterval(const fmi2Integer clockIndex[],
+                                 size_t nClockIndex, fmi2Real interval[]);
 
   virtual fmi2Status setReal   (const fmi2ValueReference vr[], size_t nvr,
                                 const fmi2Real    value[]);
@@ -117,7 +114,9 @@ class FMU2Wrapper
   virtual fmi2Status setString (const fmi2ValueReference vr[], size_t nvr,
                                 const fmi2String  value[]);
   virtual fmi2Status setClock  (const fmi2Integer clockIndex[],
-                                size_t nClockIndex);
+                                size_t nClockIndex, const fmi2Boolean active[]);
+  virtual fmi2Status setInterval(const fmi2Integer clockIndex[],
+                                 size_t nClockIndex, const fmi2Real interval[]);
 
   // Enter and exit the different modes for Model Exchange
   virtual fmi2Status newDiscreteStates      (fmi2EventInfo *eventInfo);
@@ -137,7 +136,7 @@ class FMU2Wrapper
 
  private:
   FMU2GlobalSettings _global_settings;
-  shared_ptr<MODEL_CLASS> _model;
+  MODEL_CLASS *_model;
   std::vector<string> _string_buffer;
   bool *_clock_buffer;
   int _nclock_active;

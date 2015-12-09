@@ -190,6 +190,24 @@ algorithm
   end if;
 end evaluateReplaceProtectedFinalEvaluateParameters;
 
+public function evaluateAllParameters "author: waurich
+Evaluates all parameters and replaces them with their value, if possible."
+  input BackendDAE.BackendDAE inDAE;
+  output BackendDAE.BackendDAE outDAE;
+protected
+  BackendVarTransform.VariableReplacements repl;
+algorithm
+  if Flags.isSet(Flags.EVAL_ALL_PARAMS) then
+	  (outDAE,repl) := evaluateParameters(inDAE,BackendVariable.isParam);
+	  if not BackendVarTransform.isReplacementEmpty(repl) then
+	    //BackendVarTransform.dumpReplacements(repl);
+	    outDAE := replaceEvaluatedParametersEqns(outDAE, repl);
+	  end if;
+	else
+	  outDAE := inDAE;
+	end if;
+end evaluateAllParameters;
+
 /*
  * protected section
  *
@@ -1122,11 +1140,13 @@ algorithm
 end replaceEvaluatedParametersSystemEqns;
 
 
+
+/*
 //------------------------------------------
 // evaluate all parameters
 //------------------------------------------
 
-public function evaluateAllParameters
+public function evaluateAllParameters_obsolete
 "author Waurich TUD
   evaluates and replaces all parameters"
   input BackendDAE.BackendDAE inDAE;
@@ -1151,6 +1171,7 @@ protected
   list<list<Integer>> comps;
 algorithm
   if Flags.isSet(Flags.EVAL_ALL_PARAMS) then
+    print("the old evalAllParams\n");
     BackendDAE.DAE (systs, shared as BackendDAE.SHARED(knownVars=knvars, initialEqs=initEqs, functionTree=functionTree)) := inDAE;
     knVarsLst := BackendVariable.varList(knvars);
       //BackendDump.dumpVarList(knVarsLst,"knVarsLst");
@@ -1215,7 +1236,7 @@ algorithm
   else
     outDAE := inDAE;
 	end if;
-end evaluateAllParameters;
+end evaluateAllParameters_obsolete;
 
 
 protected function getParameterBindingReplacements "gathers replacements for the vars with binding"
@@ -1289,6 +1310,7 @@ algorithm
   crefs := BackendEquation.equationCrefs(eq);
   b := List.fold(List.map2(crefs,BackendVariable.existsVar,knownVars,false),boolAnd,true);
 end isParameterEquation;
+*/
 
 annotation(__OpenModelica_Interface="backend");
 end EvaluateParameter;

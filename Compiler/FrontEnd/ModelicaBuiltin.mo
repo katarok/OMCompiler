@@ -1065,12 +1065,16 @@ function loadString "Parses the data and merges the resulting AST with ithe
   If a filename is given, it is used to provide error-messages as if the string
 was read in binary format from a file with the same name.
   The file is converted to UTF-8 from the given character set.
+  When merge is true the classes cNew in the file will be merged with the already loaded classes cOld in the following way:
+   1. get all the inner class definitions from cOld that were loaded from a different file than itself
+   2. append all elements from step 1 to class cNew public list
 
   NOTE: Encoding is deprecated as *ALL* strings are now UTF-8 encoded.
   "
   input String data;
   input String filename = "<interactive>";
   input String encoding = "UTF-8";
+  input Boolean merge = false "if merge is true the parsed AST is merged with the existing AST, default to false which means that is replaced, not merged";
   output Boolean success;
 external "builtin";
 annotation(preferredView="text");
@@ -2333,13 +2337,28 @@ The only required argument is the className, while all others have some default 
   Example command:
   translateModelFMU(className, version=\"2.0\");"
   input TypeName className "the class that should translated";
-  input String version = "1.0" "FMU version, 1.0 or 2.0.";
-  input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation).";
+  input String version = "2.0" "FMU version, 1.0 or 2.0.";
+  input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation), me_cs (both model exchange and co-simulation)";
   input String fileNamePrefix = "<default>" "fileNamePrefix. <default> = \"className\"";
   output String generatedFileName "Returns the full path of the generated FMU.";
 external "builtin";
 annotation(preferredView="text");
 end translateModelFMU;
+
+function buildModelFMU
+"translates a modelica model into a Functional Mockup Unit.
+The only required argument is the className, while all others have some default values.
+  Example command:
+  buildModelFMU(className, version=\"2.0\");"
+  input TypeName className "the class that should translated";
+  input String version = "2.0" "FMU version, 1.0 or 2.0.";
+  input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation), me_cs (both model exchange and co-simulation)";
+  input String fileNamePrefix = "<default>" "fileNamePrefix. <default> = \"className\"";
+  input String platforms[:] = {"dynamic"} "The list of platforms to generate code for. \"dynamic\"=current platform, dynamically link the runtime. \"static\"=current platform, statically link everything. Else, use a host triple, e.g. \"x86_64-linux-gnu\" or \"x86_64-w64-mingw32\"";
+  output String generatedFileName "Returns the full path of the generated FMU.";
+external "builtin";
+annotation(preferredView="text");
+end buildModelFMU;
 
 function simulate "simulates a modelica model by generating c code, build it and run the simulation executable.
  The only required argument is the className, while all others have some default values.
@@ -2389,15 +2408,36 @@ annotation(preferredView="text");
 end buildModel;
 
 function moveClass
-"moves a class up or down depending on the given direction,
- it returns true if the move was performed or false if we
- could not move the class"
+ "Moves a class up or down depending on the given offset, where a positive
+  offset moves the class down and a negative offset up. The offset is truncated
+  if the resulting index is outside the class list. It retains the visibility of
+  the class by adding public/protected sections when needed, and merges sections
+  of the same type if the class is moved from a section it was alone in. Returns
+  true if the move was successful, otherwise false."
  input TypeName className "the class that should be moved";
- input String direction "up or down";
+ input Integer offset "Offset in the class list.";
  output Boolean result;
 external "builtin";
 annotation(preferredView="text");
 end moveClass;
+
+function moveClassToTop
+  "Moves a class to the top of its enclosing class. Returns true if the move
+   was successful, otherwise false."
+  input TypeName className;
+  output Boolean result;
+external "builtin";
+annotation(preferredView="text");
+end moveClassToTop;
+
+function moveClassToBottom
+  "Moves a class to the bottom of its enclosing class. Returns true if the move
+   was successful, otherwise false."
+  input TypeName className;
+  output Boolean result;
+external "builtin";
+annotation(preferredView="text");
+end moveClassToBottom;
 
 function copyClass
 "Copies a class within the same level"
@@ -2806,6 +2846,30 @@ annotation(
 </html>"),
   preferredView="text");
 end getComponentModifierNames;
+
+function removeComponentModifiers
+  input TypeName class_;
+  input String componentName;
+  output Boolean success;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Removes the component modifiers.
+</html>"),
+  preferredView="text");
+end removeComponentModifiers;
+
+function removeExtendsModifiers
+  input TypeName className;
+  input TypeName baseClassName;
+  output Boolean success;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Removes the extends modifiers of a class.
+</html>"),
+  preferredView="text");
+end removeExtendsModifiers;
 
 function getAlgorithmCount "Counts the number of Algorithm sections in a class."
   input TypeName class_;
@@ -3581,6 +3645,8 @@ function getClassInformation
   output Boolean fileReadOnly;
   output Integer lineNumberStart, columnNumberStart, lineNumberEnd, columnNumberEnd;
   output String dimensions[:];
+  output Boolean isProtectedClass;
+  output Boolean isDocumentationClass;
 external "builtin";
 annotation(
   Documentation(info="<html>

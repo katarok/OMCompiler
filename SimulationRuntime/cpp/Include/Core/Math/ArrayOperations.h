@@ -46,6 +46,9 @@ sp (shape,indices) of source array
 template < typename T >
 void create_array_from_shape(const spec_type& sp,BaseArray<T>& s,BaseArray<T>& d);
 
+template < typename T >
+void fill_array_from_shape(const spec_type& sp,BaseArray<T>& s,BaseArray<T>& d);
+
 template <typename T>
 void promote_array(size_t n, const BaseArray<T>& s, BaseArray<T>& d);
 
@@ -54,6 +57,9 @@ void multiply_array(const BaseArray<T>& inputArray, const T &b, BaseArray<T>& ou
 
 template <typename T>
 void multiply_array(const BaseArray<T> &leftArray, const BaseArray<T> &rightArray, BaseArray<T> &resultArray);
+
+template <typename T>
+void multiply_array_elem_wise(const BaseArray<T> &leftArray, const BaseArray<T> &rightArray, BaseArray<T> &resultArray);
 
 template <typename T>
 void divide_array(const BaseArray<T>& inputArray, const T &b, BaseArray<T>& outputArray);
@@ -69,6 +75,9 @@ void pow_array_scalar(const BaseArray<double> &inputArray, T exponent, BaseArray
 
 template <typename T>
 void subtract_array(const BaseArray<T>& leftArray, const BaseArray<T>& rightArray, BaseArray<T>& resultArray);
+
+template <typename T>
+void subtract_array_scalar(const BaseArray<T>& inputArray, T b, BaseArray<T>& outputArray);
 
 template <typename T>
 void add_array(const BaseArray<T>& leftArray, const BaseArray<T>& rightArray, BaseArray<T>& resultArray);

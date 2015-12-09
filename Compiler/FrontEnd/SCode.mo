@@ -739,6 +739,17 @@ algorithm
   end match;
 end isElementExtends;
 
+public function isElementExtendsOrClassExtends
+  "Check if an element extends another class."
+  input Element ele;
+  output Boolean isExtend;
+algorithm
+  isExtend := match(ele)
+    case EXTENDS() then true;
+    else false;
+  end match;
+end isElementExtendsOrClassExtends;
+
 public function isNotElementClassExtends "
 check if an element is not of type CLASS_EXTENDS."
   input Element ele;
@@ -933,6 +944,23 @@ algorithm
 
   end match;
 end renameElement;
+
+public function elementNameEqual
+  input Element inElement1;
+  input Element inElement2;
+  output Boolean outEqual;
+algorithm
+  outEqual := match (inElement1, inElement2)
+    case (CLASS(), CLASS()) then inElement1.name == inElement2.name;
+    case (COMPONENT(), COMPONENT()) then inElement1.name == inElement2.name;
+    case (DEFINEUNIT(), DEFINEUNIT()) then inElement1.name == inElement2.name;
+    case (EXTENDS(), EXTENDS())
+      then Absyn.pathEqual(inElement1.baseClassPath, inElement2.baseClassPath);
+    case (IMPORT(), IMPORT())
+      then Absyn.importEqual(inElement1.imp, inElement2.imp);
+    else false;
+  end match;
+end elementNameEqual;
 
 public function enumName ""
 input Enum e;
@@ -1761,6 +1789,21 @@ algorithm
       then CLASS(name,prefixes,e,p,r,parts,cmt,info);
   end matchcontinue;
 end setClassName;
+
+public function makeClassPartial
+  input Element inClass;
+  output Element outClass = inClass;
+algorithm
+  outClass := match outClass
+    case CLASS(partialPrefix = NOT_PARTIAL())
+      algorithm
+        outClass.partialPrefix := PARTIAL();
+      then
+        outClass;
+
+    else outClass;
+  end match;
+end makeClassPartial;
 
 public function setClassPartialPrefix "Sets the partial prefix of a SCode Class"
   input Partial partialPrefix;
@@ -5284,6 +5327,7 @@ end mergeComponentModifiers;
 public function propagateAttributes
   input Attributes inOriginalAttributes;
   input Attributes inNewAttributes;
+  input Boolean inNewTypeIsArray = false;
   output Attributes outNewAttributes;
 protected
   Absyn.ArrayDim dims1, dims2;
@@ -5294,7 +5338,15 @@ protected
 algorithm
   ATTR(dims1, ct1, prl1, var1, dir1) := inOriginalAttributes;
   ATTR(dims2, ct2, prl2, var2, dir2) := inNewAttributes;
-  dims2 := propagateArrayDimensions(dims1, dims2);
+
+  // If the new component has an array type, don't propagate the old dimensions.
+  // E.g. type Real3 = Real[3];
+  //      replaceable Real x[:];
+  //      comp(redeclare Real3 x) => Real[3] x
+  if not inNewTypeIsArray then
+    dims2 := propagateArrayDimensions(dims1, dims2);
+  end if;
+
   ct2 := propagateConnectorType(ct1, ct2);
   prl2 := propagateParallelism(prl1,prl2);
   var2 := propagateVariability(var1, var2);
@@ -5329,18 +5381,10 @@ public function propagateParallelism
   input Parallelism inNewParallelism;
   output Parallelism outNewParallelism;
 algorithm
-  outNewParallelism := matchcontinue(inOriginalParallelism, inNewParallelism)
+  outNewParallelism := match(inOriginalParallelism, inNewParallelism)
     case (_, NON_PARALLEL()) then inOriginalParallelism;
-    case (_,_)
-      equation
-        // equality(inNewParallelism = inOriginalParallelism);
-      then inNewParallelism;
-    else
-      equation
-        print("failure in propagateParallelism: parallelism mismatch.");
-      then
-        fail();
-  end matchcontinue;
+    else inNewParallelism;
+  end match;
 end propagateParallelism;
 
 public function propagateVariability
@@ -5359,23 +5403,16 @@ public function propagateDirection
   input Absyn.Direction inNewDirection;
   output Absyn.Direction outNewDirection;
 algorithm
-  outNewDirection := matchcontinue(inOriginalDirection, inNewDirection)
+  outNewDirection := match(inOriginalDirection, inNewDirection)
     case (_, Absyn.BIDIR()) then inOriginalDirection;
-    case(_,_)
-      equation
-        // equality(inNewDirection = inOriginalDirection);
-      then inNewDirection;
-    else
-      equation
-        print(" failure in propagateDirection, inner outer mismatch");
-      then
-        fail();
-  end matchcontinue;
+    else inNewDirection;
+  end match;
 end propagateDirection;
 
 public function propagateAttributesVar
   input Element inOriginalVar;
   input Element inNewVar;
+  input Boolean inNewTypeIsArray;
   output Element outNewVar;
 protected
   Ident name;
@@ -5390,7 +5427,7 @@ algorithm
   COMPONENT(prefixes = pref1, attributes = attr1) := inOriginalVar;
   COMPONENT(name, pref2, attr2, ty, mod, cmt, cond, info) := inNewVar;
   pref2 := propagatePrefixes(pref1, pref2);
-  attr2 := propagateAttributes(attr1, attr2);
+  attr2 := propagateAttributes(attr1, attr2, inNewTypeIsArray);
   outNewVar := COMPONENT(name, pref2, attr2, ty, mod, cmt, cond, info);
 end propagateAttributesVar;
 
@@ -5647,6 +5684,16 @@ algorithm
   COMPONENT(n, pr, atr, ts, m, cmt, cnd, i) := inE;
   outE := COMPONENT(inName, pr, atr, ts, m, cmt, cnd, i);
 end setComponentName;
+
+public function isArrayComponent
+  input Element inElement;
+  output Boolean outIsArray;
+algorithm
+  outIsArray := match inElement
+    case COMPONENT(attributes = ATTR(arrayDims = _ :: _)) then true;
+    else false;
+  end match;
+end isArrayComponent;
 
 annotation(__OpenModelica_Interface="frontend");
 end SCode;
