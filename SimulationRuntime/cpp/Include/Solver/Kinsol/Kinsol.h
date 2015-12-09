@@ -118,7 +118,10 @@ private:
    int* _Ap;
    double* _Ax;
    int _nonzeros;
-
 */
+   #ifdef RUNTIME_PROFILING
+   std::vector<MeasureTimeData*> *measureTimeFunctionsArray;
+   MeasureTimeValues *measuredFunctionStartValues, *measuredFunctionEndValues;
+   #endif
 };
 /** @} */ // end of solverKinsol
