@@ -39,8 +39,8 @@ public:
         string solver_settings_key;
         if(solvername.compare("cppdassl")==0)
         {
-            PATH cppdassl_path = ObjectFactory<CreationPolicy>::_library_path;
-            PATH cppdassl_name(CPPDASSL_LIB);
+            fs::path cppdassl_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path cppdassl_name(CPPDASSL_LIB);
             cppdassl_path/=cppdassl_name;
             LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(cppdassl_path.string(),*_solver_type_map);
             if (result != LOADER_SUCCESS)
